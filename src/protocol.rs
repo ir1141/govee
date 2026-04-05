@@ -192,28 +192,3 @@ pub fn saturate_color(rgb: (u8, u8, u8), amount: f64) -> (u8, u8, u8) {
     (r, g, b)
 }
 
-// --- Scene presets ---
-
-pub struct Scene {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
-    pub temp: u16,
-}
-
-pub fn get_scene(name: &str) -> Option<Scene> {
-    match name {
-        "movie" => Some(Scene { r: 20, g: 10, b: 40, temp: 0 }),
-        "chill" => Some(Scene { r: 80, g: 40, b: 120, temp: 0 }),
-        "party" => Some(Scene { r: 255, g: 0, b: 200, temp: 0 }),
-        "sunset" => Some(Scene { r: 255, g: 100, b: 20, temp: 0 }),
-        "ocean" => Some(Scene { r: 0, g: 80, b: 200, temp: 0 }),
-        "forest" => Some(Scene { r: 10, g: 120, b: 30, temp: 0 }),
-        "aurora" => Some(Scene { r: 0, g: 200, b: 150, temp: 0 }),
-        _ => None,
-    }
-}
-
-pub const SCENE_NAMES: &[&str] = &[
-    "aurora", "chill", "forest", "movie", "ocean", "party", "sunset",
-];

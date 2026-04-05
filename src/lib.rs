@@ -7,7 +7,6 @@ pub mod audio;
 pub use protocol::{
     send_turn, send_brightness, send_color, send_color_temp, send_command,
     razer_activate, razer_deactivate, send_segments,
-    get_scene, Scene, SCENE_NAMES,
     hex_to_rgb, color_distance, smooth, saturate_color,
     MULTICAST_GROUP, SCAN_PORT, RESPONSE_PORT, CONTROL_PORT,
 };

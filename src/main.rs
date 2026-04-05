@@ -1,5 +1,5 @@
 mod cli;
-mod scenes;
+mod themes;
 mod ambient;
 mod screen;
 mod audio_cmd;
@@ -10,7 +10,6 @@ use std::process;
 use std::time::Duration;
 
 use cli::{Cli, Command};
-use scenes::ANIMATED_SCENES;
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -152,47 +151,8 @@ fn main() {
             send_command(&ip, "brightness", serde_json::json!({"value": 1}), cli.debug);
             println!("Sleep mode (dark but responsive) ({ip})");
         }
-        Command::Scene { name, ip, brightness } => {
-            let name_lower = name.to_lowercase();
-
-            if ANIMATED_SCENES.contains(&name_lower.as_str()) {
-                scenes::run_animated_scene(&name_lower, ip, brightness, cli.mirror);
-                return;
-            }
-
-            let scene = match get_scene(&name_lower) {
-                Some(s) => s,
-                None => {
-                    let all: Vec<&str> = SCENE_NAMES.iter()
-                        .chain(ANIMATED_SCENES.iter())
-                        .copied()
-                        .collect();
-                    eprintln!(
-                        "Unknown scene '{name}'. Available: {}",
-                        all.join(", ")
-                    );
-                    process::exit(1);
-                }
-            };
-            let ip = resolve_or_exit(ip.as_deref());
-            send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
-            send_command(&ip, "brightness", serde_json::json!({"value": brightness}), cli.debug);
-            if scene.temp > 0 {
-                send_command(
-                    &ip,
-                    "colorwc",
-                    serde_json::json!({"color": {"r": 0, "g": 0, "b": 0}, "colorTemInKelvin": scene.temp}),
-                    cli.debug,
-                );
-            } else {
-                send_command(
-                    &ip,
-                    "colorwc",
-                    serde_json::json!({"color": {"r": scene.r, "g": scene.g, "b": scene.b}, "colorTemInKelvin": 0}),
-                    cli.debug,
-                );
-            }
-            println!("Scene '{name_lower}' applied ({ip})");
+        Command::Theme { name, ip, brightness, segments } => {
+            themes::run_theme(&name.to_lowercase(), ip, brightness, segments, cli.mirror, cli.debug);
         }
         Command::Ambient(args) => ambient::run_ambient(args),
         Command::Screen(args) => screen::run_screen(args, cli.mirror),

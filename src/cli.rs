@@ -1,10 +1,11 @@
 use clap::{Args, Parser, Subcommand};
-use govee_lan::SCENE_NAMES;
 use govee_lan::audio::{Palette, VisMode};
+
+use crate::themes;
 
 #[derive(Parser)]
 #[command(name = "govee", about = "Control Govee LED strip lights over LAN")]
-#[command(after_help = format!("Scenes: {}", SCENE_NAMES.join(", ")))]
+#[command(after_help = format!("Themes:\n{}", themes::theme_list_display()))]
 pub struct Cli {
     #[arg(long, global = true, help = "Show raw UDP messages")]
     pub debug: bool,
@@ -65,14 +66,21 @@ pub enum Command {
         #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
-    /// Apply a scene (static or animated). Static scenes apply once. Animated scenes (fireplace, storm, ocean, aurora, lava, breathing, sunrise) loop until Ctrl+C.
-    Scene {
-        #[arg(help = "Scene name (see 'govee scene --help' for list)")]
+    /// Apply a theme (static or animated). Static themes set a color once. Animated themes loop until Ctrl+C.
+    #[command(alias = "scene")]
+    Theme {
+        #[arg(help = "Theme name (see 'govee theme --help' for list)")]
         name: String,
         #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
         #[arg(long, default_value_t = 60, help = "Strip brightness 1-100")]
         brightness: u8,
+        #[arg(long, default_value_t = 5, value_parser = |s: &str| -> Result<usize, String> {
+            let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
+            if v < 1 || v > 127 { return Err(format!("segments must be 1-127, got {v}")); }
+            Ok(v)
+        }, help = "Number of segments for animated themes (max 127 for mirror support)")]
+        segments: usize,
     },
     /// Sync Govee strip with Caelestia wallpaper theme
     Ambient(AmbientArgs),
