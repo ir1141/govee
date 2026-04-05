@@ -140,6 +140,10 @@ Govee strips with LAN API enabled listen for UDP commands on your local network:
 
 No authentication, no cloud dependency, no rate limits.
 
+## Contributing
+
+This started as a vibe-coded rewrite because the original Python version was too laggy. PRs are welcome.
+
 ## License
 
 MIT
