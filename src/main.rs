@@ -132,15 +132,13 @@ struct ScreenArgs {
 
     #[arg(
         long,
-        default_value_t = 0.10,
-        help = "Sample strip thickness as fraction of screen (ignored in full-screen mode)"
-    )]
-    border: f64,
-
-    #[arg(
-        long,
         default_value_t = 5,
-        help = "Number of color zones across top edge"
+        value_parser = |s: &str| -> Result<usize, String> {
+            let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
+            if v < 1 || v > 127 { return Err(format!("segments must be 1-127, got {v}")); }
+            Ok(v)
+        },
+        help = "Number of color zones across top edge (max 127 for mirror support)"
     )]
     segments: usize,
 
@@ -178,7 +176,11 @@ struct AudioArgs {
     #[arg(long, default_value_t = 80, help = "Strip brightness 1-100")]
     brightness: u8,
 
-    #[arg(long, default_value_t = 5, help = "Number of DreamView segments")]
+    #[arg(long, default_value_t = 5, value_parser = |s: &str| -> Result<usize, String> {
+        let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
+        if v < 1 || v > 127 { return Err(format!("segments must be 1-127, got {v}")); }
+        Ok(v)
+    }, help = "Number of DreamView segments (max 127 for mirror support)")]
     segments: usize,
 
     #[arg(long, default_value_t = 0.3, help = "Color transition speed 0.0-1.0")]
@@ -340,9 +342,7 @@ fn main() {
             };
             let ip = resolve_or_exit(ip.as_deref());
             send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
-            if brightness != 60 {
-                send_command(&ip, "brightness", serde_json::json!({"value": brightness}), cli.debug);
-            }
+            send_command(&ip, "brightness", serde_json::json!({"value": brightness}), cli.debug);
             if scene.temp > 0 {
                 send_command(
                     &ip,
@@ -595,10 +595,10 @@ fn scene_sunrise(n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
 
 // --- Ambient command ---
 
-fn scheme_path() -> PathBuf {
-    dirs::home_dir()
-        .expect("Could not determine home directory")
-        .join(".local/state/caelestia/scheme.json")
+fn scheme_path() -> anyhow::Result<PathBuf> {
+    Ok(dirs::home_dir()
+        .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
+        .join(".local/state/caelestia/scheme.json"))
 }
 
 fn read_scheme_color(path: &std::path::Path, color_key: &str) -> Option<(u8, u8, u8)> {
@@ -635,6 +635,8 @@ fn run_ambient(args: AmbientArgs) {
     };
     println!("Using device at {ip}");
 
+    ctrlc_setup();
+
     let color_key = if args.dim {
         format!("{}Dim", args.color)
     } else {
@@ -646,7 +648,13 @@ fn run_ambient(args: AmbientArgs) {
         eprintln!("Failed to set brightness: {e}");
     }
 
-    let path = scheme_path();
+    let path = match scheme_path() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("{e}");
+            process::exit(1);
+        }
+    };
 
     // Apply current color immediately
     let mut last_rgb = None;
@@ -679,9 +687,20 @@ fn run_ambient(args: AmbientArgs) {
         )
         .expect("Failed to add inotify watch");
 
+    use std::os::unix::io::AsRawFd;
+    let raw_fd = inotify.as_raw_fd();
     let mut buffer = [0u8; 4096];
-    loop {
-        match inotify.read_events_blocking(&mut buffer) {
+    while RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
+        // Poll with 1-second timeout so we can check RUNNING
+        use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+        let borrowed_fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(raw_fd) };
+        let mut poll_fds = [PollFd::new(borrowed_fd, PollFlags::POLLIN)];
+        match poll(&mut poll_fds, PollTimeout::from(1000u16)) {
+            Ok(0) => continue, // timeout, recheck RUNNING
+            Err(_) => break,
+            Ok(_) => {}
+        }
+        match inotify.read_events(&mut buffer) {
             Ok(events) => {
                 let scheme_changed = events.into_iter().any(|ev| {
                     ev.name
@@ -714,6 +733,7 @@ fn run_ambient(args: AmbientArgs) {
             }
         }
     }
+    println!("\nStopped.");
 }
 
 // --- Screen command ---
@@ -721,9 +741,13 @@ fn run_ambient(args: AmbientArgs) {
 static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 fn ctrlc_setup() {
-    ctrlc::set_handler(|| {
-        RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
-    }).expect("Failed to set Ctrl+C handler");
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        ctrlc::set_handler(|| {
+            RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+        }).expect("Failed to set Ctrl+C handler");
+    });
 }
 
 fn run_screen(args: ScreenArgs, mirror: bool) {
@@ -790,7 +814,7 @@ fn run_screen(args: ScreenArgs, mirror: bool) {
 
     // Seed smoothed colors
     if let Ok(frame) = capturer.capture(args.output.as_deref()) {
-        let colors = frame.extract_edge_colors(args.border, n_seg);
+        let colors = frame.extract_edge_colors(n_seg);
         for (i, &(r, g, b)) in colors.iter().enumerate() {
             smoothed[i] = (r as f64, g as f64, b as f64);
         }
@@ -810,7 +834,7 @@ fn run_screen(args: ScreenArgs, mirror: bool) {
             }
         };
 
-        let raw_colors = frame.extract_edge_colors(args.border, n_seg);
+        let raw_colors = frame.extract_edge_colors(n_seg);
         let mut any_changed = false;
         let mut current_colors = Vec::with_capacity(n_seg);
 

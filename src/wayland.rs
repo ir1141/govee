@@ -66,7 +66,7 @@ impl CapturedFrame {
     }
 
     /// Extract colors by sampling full-height vertical columns, split into N segments.
-    pub fn extract_edge_colors(&self, _border_pct: f64, segments: usize) -> Vec<(u8, u8, u8)> {
+    pub fn extract_edge_colors(&self, segments: usize) -> Vec<(u8, u8, u8)> {
         let segments = segments.max(1);
         let seg_w = self.width / segments as u32;
 
@@ -105,6 +105,9 @@ struct ShmBuffer {
 
 impl ShmBuffer {
     fn new(size: usize) -> Result<Self, ()> {
+        if size == 0 {
+            return Err(());
+        }
         let name = CString::new("govee-screencopy").unwrap();
         let fd = memfd_create(&name, MemFdCreateFlag::MFD_CLOEXEC).map_err(|_| ())?;
         nix::unistd::ftruncate(&fd, size as i64).map_err(|_| ())?;
@@ -112,7 +115,7 @@ impl ShmBuffer {
         let ptr = unsafe {
             mmap(
                 None,
-                NonZeroUsize::new(size).unwrap(),
+                NonZeroUsize::new(size).ok_or(())?,
                 ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
                 MapFlags::MAP_SHARED,
                 &fd,
@@ -287,7 +290,7 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
             }
             zwlr_screencopy_frame_v1::Event::BufferDone => {
                 let fs = state.frame_state.lock().unwrap();
-                let size = (fs.stride * fs.height) as usize;
+                let size = (fs.stride as usize).checked_mul(fs.height as usize).unwrap_or(0);
                 let format = fs.format;
                 let width = fs.width as i32;
                 let height = fs.height as i32;
@@ -454,6 +457,9 @@ impl ScreenCapturer {
         let fs = self.state.frame_state.lock().unwrap();
         let buf = self.state.buffer.as_ref()
             .ok_or_else(|| anyhow::anyhow!("Screen capture completed but no buffer data received"))?;
+        // SAFETY: buf.ptr and buf.size are from the same mmap allocation,
+        // sized by ftruncate(size) + mmap(size). The compositor fills this
+        // buffer before signaling Ready.
         let data = unsafe { std::slice::from_raw_parts(buf.ptr, buf.size) }.to_vec();
 
         Ok(CapturedFrame {

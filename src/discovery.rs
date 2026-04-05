@@ -20,7 +20,15 @@ pub struct DeviceInfo {
 pub fn scan_devices(timeout: Duration) -> Vec<DeviceInfo> {
     let mut devices = Vec::new();
 
-    let recv_sock = match UdpSocket::bind(("0.0.0.0", RESPONSE_PORT)) {
+    let recv_sock = match (|| -> std::io::Result<UdpSocket> {
+        let sock = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))?;
+        sock.set_reuse_address(true)?;
+        sock.bind(&socket2::SockAddr::from(std::net::SocketAddrV4::new(
+            std::net::Ipv4Addr::UNSPECIFIED,
+            RESPONSE_PORT,
+        )))?;
+        Ok(sock.into())
+    })() {
         Ok(s) => s,
         Err(_) => return devices,
     };
@@ -49,7 +57,7 @@ pub fn scan_devices(timeout: Duration) -> Vec<DeviceInfo> {
                 if let Ok(text) = std::str::from_utf8(&buf[..n]) {
                     if let Ok(resp) = serde_json::from_str::<GoveeMsg>(text) {
                         if let Ok(info) = serde_json::from_value::<DeviceInfo>(resp.msg.data) {
-                            if !info.ip.is_empty() {
+                            if !info.ip.is_empty() && info.ip.parse::<Ipv4Addr>().is_ok() {
                                 devices.push(info);
                             }
                         }

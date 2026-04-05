@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use libpulse_binding as pulse;
 use pulse::mainloop::standard::Mainloop;
@@ -93,9 +94,9 @@ pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
     let (r1, g1, b1) = anchors[idx];
     let (r2, g2, b2) = anchors[idx + 1];
     (
-        (r1 as f64 + (r2 as f64 - r1 as f64) * frac) as u8,
-        (g1 as f64 + (g2 as f64 - g1 as f64) * frac) as u8,
-        (b1 as f64 + (b2 as f64 - b1 as f64) * frac) as u8,
+        (r1 as f64 + (r2 as f64 - r1 as f64) * frac).clamp(0.0, 255.0) as u8,
+        (g1 as f64 + (g2 as f64 - g1 as f64) * frac).clamp(0.0, 255.0) as u8,
+        (b1 as f64 + (b2 as f64 - b1 as f64) * frac).clamp(0.0, 255.0) as u8,
     )
 }
 
@@ -171,7 +172,7 @@ impl AudioAnalyzer {
     }
 
     pub fn get_state(&self) -> AudioState {
-        self.state.lock().unwrap().clone()
+        self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -278,7 +279,7 @@ fn capture_loop(
     let mut planner = FftPlanner::<f64>::new();
     let fft = planner.plan_fft_forward(FFT_SIZE);
     let mut sample_buf: Vec<f32> = Vec::with_capacity(BUFFER_SIZE);
-    let mut energy_history: Vec<f64> = Vec::with_capacity(ENERGY_HISTORY);
+    let mut energy_history: VecDeque<f64> = VecDeque::with_capacity(ENERGY_HISTORY);
     let mut last_beat = Instant::now();
 
     // Adaptive gain: fast rise (0.99) catches transients, moderate decay (0.05) releases in ~1s
@@ -292,8 +293,9 @@ fn capture_loop(
         loop {
             match stream.peek() {
                 Ok(PeekResult::Data(data)) => {
-                    let floats: &[f32] = bytemuck::cast_slice(data);
-                    sample_buf.extend_from_slice(floats);
+                    if let Ok(floats) = bytemuck::try_cast_slice::<u8, f32>(data) {
+                        sample_buf.extend_from_slice(floats);
+                    }
                     stream.discard().ok();
                 }
                 Ok(PeekResult::Hole(_)) => {
@@ -364,9 +366,9 @@ fn capture_loop(
         };
 
         // Beat detection
-        energy_history.push(energy);
+        energy_history.push_back(energy);
         if energy_history.len() > ENERGY_HISTORY {
-            energy_history.remove(0);
+            energy_history.pop_front();
         }
         let avg_energy = energy_history.iter().sum::<f64>() / energy_history.len() as f64;
         let beat = energy > avg_energy * BEAT_THRESHOLD
@@ -376,7 +378,7 @@ fn capture_loop(
         }
 
         // Update shared state
-        let mut s = state.lock().unwrap();
+        let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
         s.energy = energy;
         s.bands = bands;
         s.beat = beat;
