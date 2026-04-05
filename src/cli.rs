@@ -32,38 +32,44 @@ pub enum Command {
     },
     /// Set brightness (1-100)
     Brightness {
+        #[arg(help = "Brightness level (1-100)")]
         value: u8,
-        #[arg(long)]
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
     /// Set RGB color
     Color {
+        #[arg(help = "Red (0-255)")]
         r: u8,
+        #[arg(help = "Green (0-255)")]
         g: u8,
+        #[arg(help = "Blue (0-255)")]
         b: u8,
-        #[arg(long)]
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
     /// Set color temperature (2000-9000K)
     Temp {
+        #[arg(help = "Color temperature in Kelvin (2000-9000)")]
         kelvin: u16,
-        #[arg(long)]
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
     /// Query device status
     Status {
-        #[arg(long)]
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
-    /// Dark but stays responsive (use instead of off)
+    /// Dim to near-black while keeping device responsive to commands (avoids rediscovery delay of full off)
     Sleep {
-        #[arg(long)]
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
-    /// Apply a scene (static or animated)
+    /// Apply a scene (static or animated). Static scenes apply once. Animated scenes (fireplace, storm, ocean, aurora, lava, breathing, sunrise) loop until Ctrl+C.
     Scene {
+        #[arg(help = "Scene name (see 'govee scene --help' for list)")]
         name: String,
-        #[arg(long)]
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
         #[arg(long, default_value_t = 60, help = "Strip brightness 1-100")]
         brightness: u8,
@@ -146,9 +152,9 @@ pub struct ScreenArgs {
 
     #[arg(
         long,
-        help = "Use basic colorwc instead of DreamView (single color, no segments)"
+        help = "Use single colorwc instead of DreamView segments"
     )]
-    pub no_razer: bool,
+    pub no_dreamview: bool,
 
     #[arg(short, long, help = "Verbose output")]
     pub verbose: bool,
@@ -181,8 +187,8 @@ pub struct AudioArgs {
     #[arg(long, default_value_t = 1.0, help = "Audio gain multiplier")]
     pub sensitivity: f64,
 
-    #[arg(long, help = "Single-color mode instead of DreamView")]
-    pub no_razer: bool,
+    #[arg(long, help = "Use single colorwc instead of DreamView segments")]
+    pub no_dreamview: bool,
 
     #[arg(long, help = "Interpolate between segment colors")]
     pub gradient: bool,

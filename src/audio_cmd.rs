@@ -10,7 +10,7 @@ pub fn run_audio(args: AudioArgs, mirror: bool) {
     let ip = resolve_or_exit(args.ip.as_deref());
     println!("Using device at {ip}");
 
-    let use_razer = !args.no_razer;
+    let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
 
     if let Err(e) = send_brightness(&ip, args.brightness) {

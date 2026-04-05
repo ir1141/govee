@@ -14,12 +14,12 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 
 ## Requirements
 
-- Rust toolchain (cargo)
+- [Rust toolchain](https://rustup.rs/) (cargo)
 - A Govee LED strip with **LAN API enabled** (Govee Home app > Device > Settings > LAN Control)
 - **Linux** with:
   - PulseAudio/PipeWire (for audio mode) — `libpulse-dev`
   - Wayland compositor with `wlr-screencopy-unstable-v1` (for screen mode)
-  - [Caelestia](https://github.com/caelestia-dots/) or compatible scheme.json provider (for ambient mode)
+  - [Caelestia](https://github.com/caelestia-dots/) or compatible scheme.json provider (for ambient mode) — generates wallpaper color schemes that ambient mode watches
 
 ## Install
 
@@ -91,7 +91,7 @@ govee --mirror screen
 govee screen --output DP-1
 
 # Simple single-color mode (no DreamView)
-govee screen --no-razer
+govee screen --no-dreamview
 ```
 
 ### Ambient wallpaper sync
@@ -128,7 +128,7 @@ govee audio --segments 10 --sensitivity 1.5 --gradient
 ```
 
 **Visualization modes:** `energy`, `frequency`, `beat`, `drop`
-**Palettes:** `fire`, `ocean`, `neon`, `rainbow`
+**Palettes:** `fire`, `ocean`, `forest`, `neon`, `ice`, `sunset`, `rainbow`
 
 ## How it works
 
@@ -139,6 +139,12 @@ Govee strips with LAN API enabled listen for UDP commands on your local network:
 - **DreamView/Razer protocol** for per-segment color control (base64-encoded binary over UDP)
 
 No authentication, no cloud dependency, no rate limits.
+
+## Troubleshooting
+
+- **Device not found**: Make sure LAN Control is enabled in Govee Home app (Device > Settings > LAN Control). The device must be on the same subnet.
+- **Screen mode fails**: Your Wayland compositor must support `wlr-screencopy-unstable-v1`. KDE and GNOME do not; wlroots-based compositors (Sway, Hyprland) do.
+- **Audio mode fails**: Ensure PulseAudio or PipeWire is running. Check with `pactl info`. You need a monitor source (system audio output).
 
 ## Contributing
 

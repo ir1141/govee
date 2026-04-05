@@ -276,7 +276,7 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                 height,
                 stride,
             } => {
-                let mut fs = state.frame_state.lock().unwrap();
+                let mut fs = state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
                 if !fs.buffer_info_received
                     || fmt == wl_shm::Format::Xrgb8888
                     || fmt == wl_shm::Format::Argb8888
@@ -289,7 +289,7 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                 }
             }
             zwlr_screencopy_frame_v1::Event::BufferDone => {
-                let fs = state.frame_state.lock().unwrap();
+                let fs = state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
                 let size = (fs.stride as usize).checked_mul(fs.height as usize).unwrap_or(0);
                 let format = fs.format;
                 let width = fs.width as i32;
@@ -298,7 +298,7 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                 drop(fs);
 
                 if size == 0 {
-                    state.frame_state.lock().unwrap().failed = true;
+                    state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).failed = true;
                     return;
                 }
 
@@ -312,7 +312,7 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                     match ShmBuffer::new(size) {
                         Ok(buf) => state.buffer = Some(buf),
                         Err(()) => {
-                            state.frame_state.lock().unwrap().failed = true;
+                            state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).failed = true;
                             return;
                         }
                     }
@@ -334,10 +334,10 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                 state.wl_buffer = Some(wl_buf);
             }
             zwlr_screencopy_frame_v1::Event::Ready { .. } => {
-                state.frame_state.lock().unwrap().ready = true;
+                state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).ready = true;
             }
             zwlr_screencopy_frame_v1::Event::Failed => {
-                state.frame_state.lock().unwrap().failed = true;
+                state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).failed = true;
             }
             _ => {}
         }
@@ -400,7 +400,7 @@ impl ScreenCapturer {
 
         // Reset frame state (buffer stays allocated)
         {
-            let mut fs = self.state.frame_state.lock().unwrap();
+            let mut fs = self.state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
             fs.ready = false;
             fs.failed = false;
             fs.buffer_info_received = false;
@@ -436,7 +436,7 @@ impl ScreenCapturer {
 
             self.queue.dispatch_pending(&mut self.state)?;
 
-            let fs = self.state.frame_state.lock().unwrap();
+            let fs = self.state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
             if fs.ready {
                 break;
             }
@@ -454,7 +454,7 @@ impl ScreenCapturer {
             wl_buf.destroy();
         }
 
-        let fs = self.state.frame_state.lock().unwrap();
+        let fs = self.state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
         let buf = self.state.buffer.as_ref()
             .ok_or_else(|| anyhow::anyhow!("Screen capture completed but no buffer data received"))?;
         // SAFETY: buf.ptr and buf.size are from the same mmap allocation,

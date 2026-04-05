@@ -29,7 +29,7 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
     };
     println!("Using device at {ip}");
 
-    let use_razer = !args.no_razer;
+    let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);
 
