@@ -151,6 +151,19 @@ fn main() {
             send_command(&ip, "brightness", serde_json::json!({"value": 1}), cli.debug);
             println!("Sleep mode (dark but responsive) ({ip})");
         }
+        Command::Reset { ip } => {
+            let ip = resolve_or_exit(ip.as_deref());
+            let _ = razer_deactivate(&ip);
+            send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
+            send_command(&ip, "brightness", serde_json::json!({"value": 100}), cli.debug);
+            send_command(
+                &ip,
+                "colorwc",
+                serde_json::json!({"color": {"r": 0, "g": 0, "b": 0}, "colorTemInKelvin": 4000}),
+                cli.debug,
+            );
+            println!("Reset to known good state: on, 100%, 4000K warm white ({ip})");
+        }
         Command::Theme { name, ip, brightness, segments } => {
             themes::run_theme(&name.to_lowercase(), ip, brightness, segments, cli.mirror, cli.debug);
         }

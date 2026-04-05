@@ -66,6 +66,11 @@ pub enum Command {
         #[arg(long, help = "Device IP (auto-discovers if omitted)")]
         ip: Option<String>,
     },
+    /// Reset device to a known good state (deactivates DreamView, turns on, full brightness, warm white)
+    Reset {
+        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
+        ip: Option<String>,
+    },
     /// Apply a theme (static or animated). Static themes set a color once. Animated themes loop until Ctrl+C.
     #[command(alias = "scene")]
     Theme {
