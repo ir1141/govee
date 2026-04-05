@@ -77,9 +77,9 @@ pub enum Command {
         brightness: u8,
         #[arg(long, default_value_t = 5, value_parser = |s: &str| -> Result<usize, String> {
             let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
-            if v < 1 || v > 127 { return Err(format!("segments must be 1-127, got {v}")); }
+            if v < 1 || v > 75 { return Err(format!("segments must be 1-75, got {v}")); }
             Ok(v)
-        }, help = "Number of segments for animated themes (max 127 for mirror support)")]
+        }, help = "Number of segments for animated themes (max 75, doubled with --mirror)")]
         segments: usize,
     },
     /// Sync Govee strip with Caelestia wallpaper theme
