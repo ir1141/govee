@@ -3,6 +3,7 @@ mod themes;
 mod ambient;
 mod screen;
 mod audio_cmd;
+mod ui;
 
 use clap::Parser;
 use govee_lan::*;
