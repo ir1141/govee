@@ -79,12 +79,8 @@ pub fn resolve_ip(ip: Option<&str>, timeout: Duration) -> Result<String> {
     if let Some(ip) = ip {
         return Ok(ip.to_string());
     }
-    eprintln!("Scanning for devices...");
     match discover_device(timeout) {
-        Some(ip) => {
-            eprintln!("Found device at {ip}");
-            Ok(ip)
-        }
-        None => anyhow::bail!("No Govee devices found. Make sure LAN API is enabled in the Govee app."),
+        Some(ip) => Ok(ip),
+        None => anyhow::bail!("No Govee devices found"),
     }
 }

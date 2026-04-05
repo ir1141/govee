@@ -28,10 +28,23 @@ fn ctrlc_setup() {
 }
 
 fn resolve_or_exit(ip: Option<&str>) -> String {
+    let auto = ip.is_none();
+    if auto {
+        ui::banner();
+        ui::discovery_scanning();
+    }
     match resolve_ip(ip, SCAN_TIMEOUT) {
-        Ok(ip) => ip,
-        Err(e) => {
-            eprintln!("{e}");
+        Ok(ip) => {
+            if auto {
+                ui::discovery_found("device", &ip);
+            }
+            ip
+        }
+        Err(_) => {
+            ui::error_hint(
+                "No device found",
+                "Is the strip powered on and connected to WiFi?",
+            );
             process::exit(1);
         }
     }
