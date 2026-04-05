@@ -309,14 +309,24 @@ fn capture_loop(
                 .map(|c| c.norm())
                 .sum();
             let avg = sum / (bin_hi - bin_lo) as f64;
-            // Normalize against rolling peak
-            band_peaks[band_idx] = band_peaks[band_idx].max(avg) * 0.999 + avg * 0.001;
+            // Normalize against rolling peak (decay toward zero, ratchet up on new highs)
+            if avg > band_peaks[band_idx] {
+                band_peaks[band_idx] = avg;
+            } else {
+                band_peaks[band_idx] *= 0.995;
+            }
+            band_peaks[band_idx] = band_peaks[band_idx].max(0.001);
             bands[band_idx] = (avg / band_peaks[band_idx]).clamp(0.0, 1.0);
         }
 
-        // Normalize energy against peak
+        // Normalize energy against peak (decay toward zero, ratchet up on new highs)
         let mut peak = state.lock().unwrap().peak;
-        peak = peak.max(rms) * 0.999 + rms * 0.001;
+        if rms > peak {
+            peak = rms;
+        } else {
+            peak *= 0.995;
+        }
+        peak = peak.max(0.001);
         let energy = (rms / peak).clamp(0.0, 1.0);
 
         // Beat detection
