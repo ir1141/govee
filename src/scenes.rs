@@ -28,6 +28,7 @@ pub fn run_animated_scene(name: &str, ip: Option<String>, brightness: u8, mirror
 
     while RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
         let colors: Vec<(u8, u8, u8)> = match name {
+            "candlelight" => scene_candlelight(&mut rng, &mut phase, n_seg),
             "fireplace" => scene_fireplace(&mut rng, &mut phase, n_seg),
             "storm" => scene_storm(&mut rng, &mut phase, n_seg, t),
             "ocean" => scene_ocean(n_seg, t),
@@ -49,6 +50,7 @@ pub fn run_animated_scene(name: &str, ip: Option<String>, brightness: u8, mirror
         let _ = send_segments(&ip, &send_colors, true);
 
         let delay = match name {
+            "candlelight" => rng.random_range(100..250),
             "fireplace" | "lava" => rng.random_range(80..180),
             "storm" => rng.random_range(50..150),
             "sunrise" => 500,
@@ -65,8 +67,33 @@ pub fn run_animated_scene(name: &str, ip: Option<String>, brightness: u8, mirror
 }
 
 pub const ANIMATED_SCENES: &[&str] = &[
-    "fireplace", "storm", "ocean", "aurora", "lava", "breathing", "sunrise",
+    "candlelight", "fireplace", "storm", "ocean", "aurora", "lava", "breathing", "sunrise",
 ];
+
+fn scene_candlelight(rng: &mut impl rand::RngExt, flicker: &mut [f64], n_seg: usize) -> Vec<(u8, u8, u8)> {
+    for f in flicker.iter_mut() {
+        *f += rng.random_range(-0.2..0.2);
+        *f = f.clamp(0.0, 1.0);
+    }
+    // frequent dims (draft hitting the flame)
+    if rng.random_range(0.0..1.0) < 0.25 {
+        let idx = rng.random_range(0..n_seg);
+        flicker[idx] *= rng.random_range(0.1..0.4);
+    }
+    // bright flares
+    if rng.random_range(0.0..1.0) < 0.15 {
+        let idx = rng.random_range(0..n_seg);
+        flicker[idx] = (flicker[idx] + 0.5).min(1.0);
+    }
+    flicker.iter()
+        .map(|&f| {
+            let r = (100.0 + f * 155.0) as u8;      // 100–255
+            let g = (40.0 + f * 170.0) as u8;        // 40–210
+            let b = (f * 25.0) as u8;                // 0–25
+            (r, g, b)
+        })
+        .collect()
+}
 
 fn scene_fireplace(rng: &mut impl rand::RngExt, heat: &mut [f64], n_seg: usize) -> Vec<(u8, u8, u8)> {
     for h in heat.iter_mut() {

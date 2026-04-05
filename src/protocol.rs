@@ -209,12 +209,11 @@ pub fn get_scene(name: &str) -> Option<Scene> {
         "sunset" => Some(Scene { r: 255, g: 100, b: 20, temp: 0 }),
         "ocean" => Some(Scene { r: 0, g: 80, b: 200, temp: 0 }),
         "forest" => Some(Scene { r: 10, g: 120, b: 30, temp: 0 }),
-        "candlelight" => Some(Scene { r: 0, g: 0, b: 0, temp: 3000 }),
         "aurora" => Some(Scene { r: 0, g: 200, b: 150, temp: 0 }),
         _ => None,
     }
 }
 
 pub const SCENE_NAMES: &[&str] = &[
-    "aurora", "candlelight", "chill", "forest", "movie", "ocean", "party", "sunset",
+    "aurora", "chill", "forest", "movie", "ocean", "party", "sunset",
 ];
