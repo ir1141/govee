@@ -341,3 +341,72 @@ fn capture_loop(
 
     Ok(())
 }
+
+/// Map audio state to segment colors based on visualization mode
+pub fn map_colors(
+    audio: &AudioState,
+    mode: VisMode,
+    palette: Palette,
+    n_seg: usize,
+    t: f64,
+    beat_hue: &mut f64,
+    beat_decay: &mut f64,
+) -> Vec<(u8, u8, u8)> {
+    match mode {
+        VisMode::Energy => map_energy(audio, palette, n_seg, t),
+        VisMode::Frequency => map_frequency(audio, palette, n_seg),
+        VisMode::Beat => map_beat(audio, palette, n_seg, beat_hue, beat_decay),
+    }
+}
+
+fn map_energy(audio: &AudioState, palette: Palette, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
+    (0..n_seg)
+        .map(|i| {
+            // Slight per-segment variation with time-offset sine wave
+            let offset = (t * 2.0 + i as f64 * 0.6).sin() * 0.08;
+            let intensity = (audio.energy + offset).clamp(0.0, 1.0);
+            palette_color(palette, intensity)
+        })
+        .collect()
+}
+
+fn map_frequency(audio: &AudioState, palette: Palette, n_seg: usize) -> Vec<(u8, u8, u8)> {
+    // Distribute 6 bands across N segments, weighting bass higher
+    (0..n_seg)
+        .map(|i| {
+            // Map segment position to band index with bass bias
+            // First 40% of segments cover bass (band 0), rest distributed evenly
+            let pos = i as f64 / n_seg as f64;
+            let band_idx = if pos < 0.4 {
+                0
+            } else {
+                let remaining = (pos - 0.4) / 0.6;
+                (1.0 + remaining * 4.99).min(5.0) as usize
+            };
+            palette_color(palette, audio.bands[band_idx])
+        })
+        .collect()
+}
+
+fn map_beat(
+    audio: &AudioState,
+    palette: Palette,
+    n_seg: usize,
+    beat_hue: &mut f64,
+    beat_decay: &mut f64,
+) -> Vec<(u8, u8, u8)> {
+    if audio.beat {
+        *beat_decay = 1.0;
+        *beat_hue = (*beat_hue + 0.2) % 1.0;
+    } else {
+        *beat_decay *= 0.92; // exponential decay
+    }
+
+    let base_intensity = 0.1 + audio.energy * 0.15;
+    let flash_intensity = *beat_decay;
+    let intensity = base_intensity + flash_intensity * (1.0 - base_intensity);
+
+    (0..n_seg)
+        .map(|_| palette_color(palette, intensity.clamp(0.0, 1.0)))
+        .collect()
+}
