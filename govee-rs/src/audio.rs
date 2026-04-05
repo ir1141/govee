@@ -103,8 +103,7 @@ const BUFFER_SIZE: usize = 1024; // ~23ms window for responsive updates
 const BEAT_COOLDOWN_MS: u128 = 200;
 const BEAT_THRESHOLD: f64 = 1.5;
 const ENERGY_HISTORY: usize = 43; // ~1 second at 44100/1024
-const RMS_SCALE: f64 = 8.0; // fixed scale for raw RMS (monitor sources are quiet)
-const BAND_SCALE: f64 = 0.02; // fixed scale for raw FFT band magnitudes
+const NOISE_GATE: f64 = 5e-3; // squelch: signal below this raw RMS is silence
 
 /// Frequency band boundaries in Hz
 const BAND_EDGES: [(f64, f64); 6] = [
@@ -115,6 +114,29 @@ const BAND_EDGES: [(f64, f64); 6] = [
     (2500.0, 6000.0),
     (6000.0, 20000.0),
 ];
+
+/// Asymmetric exponential filter — fast rise, slow decay.
+/// Tracks a peak value that quickly jumps up to loud signals but slowly
+/// decays, so dividing by it always yields a full 0.0-1.0 dynamic range.
+struct ExpFilter {
+    value: f64,
+    alpha_rise: f64,
+    alpha_decay: f64,
+}
+
+impl ExpFilter {
+    fn new(initial: f64, alpha_rise: f64, alpha_decay: f64) -> Self {
+        Self { value: initial, alpha_rise, alpha_decay }
+    }
+
+    fn update(&mut self, sample: f64) -> f64 {
+        let alpha = if sample > self.value { self.alpha_rise } else { self.alpha_decay };
+        self.value = alpha * sample + (1.0 - alpha) * self.value;
+        // Never decay below noise gate — prevents normalizing silence to full range
+        self.value = self.value.max(NOISE_GATE);
+        self.value
+    }
+}
 
 pub struct AudioAnalyzer {
     pub state: Arc<Mutex<AudioState>>,
@@ -224,9 +246,18 @@ fn capture_loop(
     let mut stream = Stream::new(&mut context, "govee-capture", &spec, None)
         .ok_or("Failed to create PA stream")?;
 
+    // Request low-latency buffer: ~23ms fragments to minimize lag
+    let target_bytes = BUFFER_SIZE as u32 * std::mem::size_of::<f32>() as u32;
+    let buf_attr = pulse::def::BufferAttr {
+        maxlength: u32::MAX,
+        tlength: u32::MAX,
+        prebuf: u32::MAX,
+        minreq: u32::MAX,
+        fragsize: target_bytes,
+    };
     stream.connect_record(
         Some(&monitor_source),
-        None,
+        Some(&buf_attr),
         pulse::stream::FlagSet::ADJUST_LATENCY,
     ).map_err(|e| format!("PA record connect: {e}"))?;
 
@@ -248,26 +279,32 @@ fn capture_loop(
     let mut energy_history: Vec<f64> = Vec::with_capacity(ENERGY_HISTORY);
     let mut last_beat = Instant::now();
 
+    // Adaptive gain: fast rise (0.99) catches transients, moderate decay (0.05) releases in ~1s
+    let mut rms_gain = ExpFilter::new(NOISE_GATE, 0.99, 0.05);
+    let mut band_gains: [ExpFilter; 6] = std::array::from_fn(|_| ExpFilter::new(NOISE_GATE, 0.99, 0.05));
+
     while running.load(std::sync::atomic::Ordering::Relaxed) {
         mainloop.iterate(true);
 
-        // Read available samples
-        match stream.peek() {
-            Ok(PeekResult::Data(data)) => {
-                let floats: &[f32] = unsafe {
-                    std::slice::from_raw_parts(
-                        data.as_ptr() as *const f32,
-                        data.len() / std::mem::size_of::<f32>(),
-                    )
-                };
-                sample_buf.extend_from_slice(floats);
-                stream.discard().ok();
+        // Drain ALL available fragments — don't block between them
+        loop {
+            match stream.peek() {
+                Ok(PeekResult::Data(data)) => {
+                    let floats: &[f32] = unsafe {
+                        std::slice::from_raw_parts(
+                            data.as_ptr() as *const f32,
+                            data.len() / std::mem::size_of::<f32>(),
+                        )
+                    };
+                    sample_buf.extend_from_slice(floats);
+                    stream.discard().ok();
+                }
+                Ok(PeekResult::Hole(_)) => {
+                    stream.discard().ok();
+                }
+                Ok(PeekResult::Empty) => break,
+                Err(_) => break,
             }
-            Ok(PeekResult::Hole(_)) => {
-                stream.discard().ok();
-            }
-            Ok(PeekResult::Empty) => continue,
-            Err(_) => continue,
         }
 
         // Process when we have enough samples
@@ -275,13 +312,19 @@ fn capture_loop(
             continue;
         }
 
-        // Take last BUFFER_SIZE samples
+        // Skip to the LATEST samples — discard stale data to minimize latency
+        if sample_buf.len() > BUFFER_SIZE {
+            let skip = sample_buf.len() - BUFFER_SIZE;
+            sample_buf.drain(..skip);
+        }
+
         let samples: Vec<f32> = sample_buf.drain(..BUFFER_SIZE).collect();
 
         // RMS energy
         let rms = (samples.iter().map(|&s| (s as f64) * (s as f64)).sum::<f64>()
             / samples.len() as f64)
             .sqrt();
+
 
         // Hanning window + FFT on last FFT_SIZE samples
         let window_start = samples.len() - FFT_SIZE;
@@ -310,11 +353,18 @@ fn capture_loop(
                 .map(|c| c.norm())
                 .sum();
             let avg = sum / (bin_hi - bin_lo) as f64;
-            bands[band_idx] = (avg * BAND_SCALE).clamp(0.0, 1.0);
+            // Adaptive per-band normalization
+            let peak = band_gains[band_idx].update(avg);
+            bands[band_idx] = if peak > NOISE_GATE { (avg / peak).clamp(0.0, 1.0) } else { 0.0 };
         }
 
-        // Direct RMS scaling — no auto-gain, sensitivity is the user's gain knob
-        let energy = (rms * RMS_SCALE).clamp(0.0, 1.0);
+        // Adaptive RMS normalization — track peak with fast rise / slow decay
+        let rms_peak = rms_gain.update(rms);
+        let energy = if rms < NOISE_GATE {
+            0.0 // squelch: silence → LEDs off
+        } else {
+            (rms / rms_peak).clamp(0.0, 1.0)
+        };
 
         // Beat detection
         energy_history.push(energy);
@@ -359,8 +409,8 @@ pub fn map_colors(
 fn map_energy(audio: &AudioState, palette: Palette, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
     (0..n_seg)
         .map(|i| {
-            // Slight per-segment variation with time-offset sine wave
-            let offset = (t * 2.0 + i as f64 * 0.6).sin() * 0.08;
+            // Per-segment variation scales with energy — silent = truly dark
+            let offset = (t * 2.0 + i as f64 * 0.6).sin() * 0.08 * audio.energy;
             let intensity = (audio.energy + offset).clamp(0.0, 1.0);
             palette_color(palette, intensity)
         })
