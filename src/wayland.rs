@@ -1,0 +1,467 @@
+use anyhow::Result;
+use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+use nix::sys::memfd::{memfd_create, MemFdCreateFlag};
+use nix::sys::mman::{mmap, munmap, MapFlags, ProtFlags};
+use std::ffi::CString;
+use std::num::NonZeroUsize;
+use std::os::fd::AsFd;
+use std::os::unix::io::OwnedFd;
+use std::sync::{Arc, Mutex};
+use wayland_client::protocol::{wl_buffer, wl_output, wl_registry, wl_shm, wl_shm_pool};
+use wayland_client::{delegate_noop, Connection, Dispatch, EventQueue, QueueHandle, WEnum};
+use wayland_protocols_wlr::screencopy::v1::client::{
+    zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
+};
+
+#[derive(Debug, Clone)]
+pub struct CapturedFrame {
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: wl_shm::Format,
+    pub data: Vec<u8>,
+}
+
+/// Subsampling step — skip pixels for performance.
+/// At 4K (3840x2160) with step=4, we sample ~500K pixels instead of ~8M.
+const SAMPLE_STEP: u32 = 4;
+
+impl CapturedFrame {
+    /// Average color from a rectangular region, subsampled for performance.
+    fn average_color(&self, x: u32, y: u32, w: u32, h: u32) -> (u8, u8, u8) {
+        let bpp: u32 = 4;
+        let (mut r_sum, mut g_sum, mut b_sum) = (0u64, 0u64, 0u64);
+        let mut count = 0u64;
+
+        let y_end = (y + h).min(self.height);
+        let x_end = (x + w).min(self.width);
+
+        let mut row = y;
+        while row < y_end {
+            let mut col = x;
+            while col < x_end {
+                let offset = (row * self.stride + col * bpp) as usize;
+                if offset + 3 >= self.data.len() {
+                    col += SAMPLE_STEP;
+                    continue;
+                }
+                b_sum += self.data[offset] as u64;
+                g_sum += self.data[offset + 1] as u64;
+                r_sum += self.data[offset + 2] as u64;
+                count += 1;
+
+                col += SAMPLE_STEP;
+            }
+            row += SAMPLE_STEP;
+        }
+
+        if count == 0 {
+            return (0, 0, 0);
+        }
+        (
+            (r_sum / count) as u8,
+            (g_sum / count) as u8,
+            (b_sum / count) as u8,
+        )
+    }
+
+    /// Extract colors by sampling full-height vertical columns, split into N segments.
+    pub fn extract_edge_colors(&self, _border_pct: f64, segments: usize) -> Vec<(u8, u8, u8)> {
+        let segments = segments.max(1);
+        let seg_w = self.width / segments as u32;
+
+        (0..segments)
+            .map(|i| {
+                let x0 = i as u32 * seg_w;
+                let x1 = if i == segments - 1 {
+                    self.width
+                } else {
+                    (i as u32 + 1) * seg_w
+                };
+                self.average_color(x0, 0, x1 - x0, self.height)
+            })
+            .collect()
+    }
+}
+
+// --- Wayland state machine ---
+
+struct FrameState {
+    width: u32,
+    height: u32,
+    stride: u32,
+    format: wl_shm::Format,
+    ready: bool,
+    failed: bool,
+    buffer_info_received: bool,
+}
+
+/// Persistent shm buffer reused across captures.
+struct ShmBuffer {
+    ptr: *mut u8,
+    size: usize,
+    fd: OwnedFd,
+}
+
+impl ShmBuffer {
+    fn new(size: usize) -> Result<Self, ()> {
+        let name = CString::new("govee-screencopy").unwrap();
+        let fd = memfd_create(&name, MemFdCreateFlag::MFD_CLOEXEC).map_err(|_| ())?;
+        nix::unistd::ftruncate(&fd, size as i64).map_err(|_| ())?;
+
+        let ptr = unsafe {
+            mmap(
+                None,
+                NonZeroUsize::new(size).unwrap(),
+                ProtFlags::PROT_READ | ProtFlags::PROT_WRITE,
+                MapFlags::MAP_SHARED,
+                &fd,
+                0,
+            )
+        }
+        .map_err(|_| ())?;
+
+        Ok(Self {
+            ptr: ptr.as_ptr() as *mut u8,
+            size,
+            fd,
+        })
+    }
+}
+
+impl Drop for ShmBuffer {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = munmap(
+                std::ptr::NonNull::new(self.ptr as *mut std::ffi::c_void)
+                    .expect("mmap returned non-null"),
+                self.size,
+            );
+        }
+    }
+}
+
+struct WaylandState {
+    shm: Option<wl_shm::WlShm>,
+    screencopy_manager: Option<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1>,
+    outputs: Vec<(wl_output::WlOutput, String)>,
+    frame_state: Arc<Mutex<FrameState>>,
+    buffer: Option<ShmBuffer>,
+    wl_buffer: Option<wl_buffer::WlBuffer>,
+}
+
+impl WaylandState {
+    fn new() -> Self {
+        Self {
+            shm: None,
+            screencopy_manager: None,
+            outputs: Vec::new(),
+            frame_state: Arc::new(Mutex::new(FrameState {
+                width: 0,
+                height: 0,
+                stride: 0,
+                format: wl_shm::Format::Xrgb8888,
+                ready: false,
+                failed: false,
+                buffer_info_received: false,
+            })),
+            buffer: None,
+            wl_buffer: None,
+        }
+    }
+}
+
+impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
+    fn event(
+        state: &mut Self,
+        registry: &wl_registry::WlRegistry,
+        event: wl_registry::Event,
+        _data: &(),
+        _conn: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        if let wl_registry::Event::Global {
+            name,
+            interface,
+            version,
+        } = event
+        {
+            match interface.as_str() {
+                "wl_shm" => {
+                    state.shm =
+                        Some(registry.bind::<wl_shm::WlShm, _, Self>(name, version.min(1), qh, ()));
+                }
+                "wl_output" => {
+                    let output = registry.bind::<wl_output::WlOutput, _, Self>(
+                        name,
+                        version.min(4),
+                        qh,
+                        (),
+                    );
+                    state.outputs.push((output, String::new()));
+                }
+                "zwlr_screencopy_manager_v1" => {
+                    state.screencopy_manager = Some(
+                        registry.bind::<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, _, Self>(
+                            name,
+                            version.min(3),
+                            qh,
+                            (),
+                        ),
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+impl Dispatch<wl_shm::WlShm, ()> for WaylandState {
+    fn event(
+        _state: &mut Self,
+        _shm: &wl_shm::WlShm,
+        _event: wl_shm::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<wl_output::WlOutput, ()> for WaylandState {
+    fn event(
+        state: &mut Self,
+        output: &wl_output::WlOutput,
+        event: wl_output::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+        if let wl_output::Event::Name { name } = event {
+            if let Some(entry) = state.outputs.iter_mut().find(|(o, _)| o == output) {
+                entry.1 = name;
+            }
+        }
+    }
+}
+
+impl Dispatch<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, ()> for WaylandState {
+    fn event(
+        _state: &mut Self,
+        _manager: &zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1,
+        _event: zwlr_screencopy_manager_v1::Event,
+        _data: &(),
+        _conn: &Connection,
+        _qh: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandState {
+    fn event(
+        state: &mut Self,
+        frame: &zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1,
+        event: zwlr_screencopy_frame_v1::Event,
+        _data: &(),
+        _conn: &Connection,
+        qh: &QueueHandle<Self>,
+    ) {
+        match event {
+            zwlr_screencopy_frame_v1::Event::Buffer {
+                format: WEnum::Value(fmt),
+                width,
+                height,
+                stride,
+            } => {
+                let mut fs = state.frame_state.lock().unwrap();
+                if !fs.buffer_info_received
+                    || fmt == wl_shm::Format::Xrgb8888
+                    || fmt == wl_shm::Format::Argb8888
+                {
+                    fs.width = width;
+                    fs.height = height;
+                    fs.stride = stride;
+                    fs.format = fmt;
+                    fs.buffer_info_received = true;
+                }
+            }
+            zwlr_screencopy_frame_v1::Event::BufferDone => {
+                let fs = state.frame_state.lock().unwrap();
+                let size = (fs.stride * fs.height) as usize;
+                let format = fs.format;
+                let width = fs.width as i32;
+                let height = fs.height as i32;
+                let stride = fs.stride as i32;
+                drop(fs);
+
+                if size == 0 {
+                    state.frame_state.lock().unwrap().failed = true;
+                    return;
+                }
+
+                // Reallocate only if size changed
+                let needs_new = match &state.buffer {
+                    Some(buf) => buf.size != size,
+                    None => true,
+                };
+                if needs_new {
+                    state.buffer = None; // drop old buffer first
+                    match ShmBuffer::new(size) {
+                        Ok(buf) => state.buffer = Some(buf),
+                        Err(()) => {
+                            state.frame_state.lock().unwrap().failed = true;
+                            return;
+                        }
+                    }
+                }
+
+                let buf = state.buffer.as_ref().unwrap();
+
+                // Create wl_shm_pool and wl_buffer from the persistent shm fd
+                let shm = state.shm.as_ref().unwrap();
+                let pool = shm.create_pool(buf.fd.as_fd(), size as i32, qh, ());
+                let wl_buf = pool.create_buffer(0, width, height, stride, format, qh, ());
+                pool.destroy();
+
+                // Destroy previous wl_buffer before replacing
+                if let Some(old) = state.wl_buffer.take() {
+                    old.destroy();
+                }
+                frame.copy(&wl_buf);
+                state.wl_buffer = Some(wl_buf);
+            }
+            zwlr_screencopy_frame_v1::Event::Ready { .. } => {
+                state.frame_state.lock().unwrap().ready = true;
+            }
+            zwlr_screencopy_frame_v1::Event::Failed => {
+                state.frame_state.lock().unwrap().failed = true;
+            }
+            _ => {}
+        }
+    }
+}
+
+delegate_noop!(WaylandState: ignore wl_shm_pool::WlShmPool);
+delegate_noop!(WaylandState: ignore wl_buffer::WlBuffer);
+
+/// A reusable screen capturer that holds the Wayland connection open.
+pub struct ScreenCapturer {
+    _conn: Connection,
+    queue: EventQueue<WaylandState>,
+    state: WaylandState,
+}
+
+impl ScreenCapturer {
+    pub fn new() -> Result<Self> {
+        let conn = Connection::connect_to_env()?;
+        let display = conn.display();
+        let mut queue = conn.new_event_queue();
+        let qh = queue.handle();
+        let mut state = WaylandState::new();
+
+        display.get_registry(&qh, ());
+        queue.roundtrip(&mut state)?;
+        queue.roundtrip(&mut state)?; // second roundtrip for output names
+
+        if state.screencopy_manager.is_none() {
+            anyhow::bail!("Compositor does not support wlr-screencopy-unstable-v1");
+        }
+        if state.shm.is_none() {
+            anyhow::bail!("No wl_shm global found");
+        }
+
+        Ok(Self { _conn: conn, queue, state })
+    }
+
+    /// List available output names.
+    pub fn outputs(&self) -> Vec<String> {
+        self.state.outputs.iter().map(|(_, name)| name.clone()).collect()
+    }
+
+    /// Capture a frame from the specified output (or first output if None).
+    pub fn capture(&mut self, output_name: Option<&str>) -> Result<CapturedFrame> {
+        let output = if let Some(name) = output_name {
+            self.state
+                .outputs
+                .iter()
+                .find(|(_, n)| n == name)
+                .map(|(o, _)| o.clone())
+                .ok_or_else(|| anyhow::anyhow!("Output '{}' not found. Available: {:?}", name, self.outputs()))?
+        } else {
+            self.state
+                .outputs
+                .first()
+                .map(|(o, _)| o.clone())
+                .ok_or_else(|| anyhow::anyhow!("No outputs available"))?
+        };
+
+        // Reset frame state (buffer stays allocated)
+        {
+            let mut fs = self.state.frame_state.lock().unwrap();
+            fs.ready = false;
+            fs.failed = false;
+            fs.buffer_info_received = false;
+        }
+
+        let qh = self.queue.handle();
+        let manager = self.state.screencopy_manager.as_ref().unwrap();
+        let screencopy_frame = manager.capture_output(0, &output, &qh, ());
+
+        // Dispatch events until frame is ready, failed, or timed out
+        loop {
+            self.queue.flush()?;
+
+            if let Some(guard) = self.queue.prepare_read() {
+                let fd = guard.connection_fd();
+                let mut poll_fds = [PollFd::new(fd, PollFlags::POLLIN)];
+                match poll(&mut poll_fds, PollTimeout::from(2000u16)) {
+                    Ok(0) => {
+                        drop(guard);
+                        screencopy_frame.destroy();
+                        anyhow::bail!("Screen capture timed out");
+                    }
+                    Ok(_) => {
+                        let _ = guard.read();
+                    }
+                    Err(e) => {
+                        drop(guard);
+                        screencopy_frame.destroy();
+                        return Err(anyhow::anyhow!(e));
+                    }
+                }
+            }
+
+            self.queue.dispatch_pending(&mut self.state)?;
+
+            let fs = self.state.frame_state.lock().unwrap();
+            if fs.ready {
+                break;
+            }
+            if fs.failed {
+                screencopy_frame.destroy();
+                anyhow::bail!("Screen capture failed");
+            }
+        }
+
+        // Destroy the screencopy frame protocol object
+        screencopy_frame.destroy();
+
+        // Destroy the wl_buffer (compositor is done with it after Ready)
+        if let Some(wl_buf) = self.state.wl_buffer.take() {
+            wl_buf.destroy();
+        }
+
+        let fs = self.state.frame_state.lock().unwrap();
+        let buf = self.state.buffer.as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Screen capture completed but no buffer data received"))?;
+        let data = unsafe { std::slice::from_raw_parts(buf.ptr, buf.size) }.to_vec();
+
+        Ok(CapturedFrame {
+            width: fs.width,
+            height: fs.height,
+            stride: fs.stride,
+            format: fs.format,
+            data,
+        })
+    }
+}

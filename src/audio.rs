@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::sync::{Arc, Mutex};
 use libpulse_binding as pulse;
 use pulse::mainloop::standard::Mainloop;
@@ -146,7 +147,7 @@ pub struct AudioAnalyzer {
 }
 
 impl AudioAnalyzer {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self> {
         let state = Arc::new(Mutex::new(AudioState::default()));
         let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
 
@@ -183,7 +184,7 @@ impl Drop for AudioAnalyzer {
     }
 }
 
-fn find_monitor_source(mainloop: &mut Mainloop, context: &Context) -> Result<String, String> {
+fn find_monitor_source(mainloop: &mut Mainloop, context: &Context) -> Result<String> {
     use pulse::operation::State;
     use std::cell::RefCell;
     use std::rc::Rc;
@@ -203,24 +204,24 @@ fn find_monitor_source(mainloop: &mut Mainloop, context: &Context) -> Result<Str
             State::Running => {
                 mainloop.iterate(true);
             }
-            State::Cancelled => return Err("Server info query cancelled".into()),
+            State::Cancelled => anyhow::bail!("Server info query cancelled"),
         }
     }
 
     let borrowed = result.borrow().clone();
-    borrowed.ok_or_else(|| "No default sink found".into())
+    borrowed.ok_or_else(|| anyhow::anyhow!("No default sink found"))
 }
 
 fn capture_loop(
     state: Arc<Mutex<AudioState>>,
     running: Arc<std::sync::atomic::AtomicBool>,
-) -> Result<(), String> {
-    let mut mainloop = Mainloop::new().ok_or("Failed to create PulseAudio mainloop")?;
+) -> Result<()> {
+    let mut mainloop = Mainloop::new().ok_or_else(|| anyhow::anyhow!("Failed to create PulseAudio mainloop"))?;
     let mut context = Context::new(&mainloop, "govee-audio")
-        .ok_or("Failed to create PulseAudio context")?;
+        .ok_or_else(|| anyhow::anyhow!("Failed to create PulseAudio context"))?;
 
     context.connect(None, pulse::context::FlagSet::NOFLAGS, None)
-        .map_err(|e| format!("PA connect: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("PA connect: {e}"))?;
 
     // Wait for context to be ready
     loop {
@@ -228,7 +229,7 @@ fn capture_loop(
         match context.get_state() {
             pulse::context::State::Ready => break,
             pulse::context::State::Failed | pulse::context::State::Terminated => {
-                return Err("PulseAudio connection failed".into());
+                anyhow::bail!("PulseAudio connection failed");
             }
             _ => {}
         }
@@ -245,7 +246,7 @@ fn capture_loop(
     assert!(spec.is_valid());
 
     let mut stream = Stream::new(&mut context, "govee-capture", &spec, None)
-        .ok_or("Failed to create PA stream")?;
+        .ok_or_else(|| anyhow::anyhow!("Failed to create PA stream"))?;
 
     // Request low-latency buffer: ~23ms fragments to minimize lag
     let target_bytes = BUFFER_SIZE as u32 * std::mem::size_of::<f32>() as u32;
@@ -260,7 +261,7 @@ fn capture_loop(
         Some(&monitor_source),
         Some(&buf_attr),
         pulse::stream::FlagSet::ADJUST_LATENCY,
-    ).map_err(|e| format!("PA record connect: {e}"))?;
+    ).map_err(|e| anyhow::anyhow!("PA record connect: {e}"))?;
 
     // Wait for stream to be ready
     loop {
@@ -268,7 +269,7 @@ fn capture_loop(
         match stream.get_state() {
             pulse::stream::State::Ready => break,
             pulse::stream::State::Failed | pulse::stream::State::Terminated => {
-                return Err("PA stream failed".into());
+                anyhow::bail!("PA stream failed");
             }
             _ => {}
         }
@@ -291,12 +292,7 @@ fn capture_loop(
         loop {
             match stream.peek() {
                 Ok(PeekResult::Data(data)) => {
-                    let floats: &[f32] = unsafe {
-                        std::slice::from_raw_parts(
-                            data.as_ptr() as *const f32,
-                            data.len() / std::mem::size_of::<f32>(),
-                        )
-                    };
+                    let floats: &[f32] = bytemuck::cast_slice(data);
                     sample_buf.extend_from_slice(floats);
                     stream.discard().ok();
                 }

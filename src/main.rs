@@ -596,8 +596,9 @@ fn scene_sunrise(n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
 // --- Ambient command ---
 
 fn scheme_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home".into());
-    PathBuf::from(home).join(".local/state/caelestia/scheme.json")
+    dirs::home_dir()
+        .expect("Could not determine home directory")
+        .join(".local/state/caelestia/scheme.json")
 }
 
 fn read_scheme_color(path: &std::path::Path, color_key: &str) -> Option<(u8, u8, u8)> {
@@ -719,14 +720,10 @@ fn run_ambient(args: AmbientArgs) {
 
 static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
-extern "C" fn handle_sigint(_: nix::libc::c_int) {
-    RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
-}
-
 fn ctrlc_setup() {
-    unsafe {
-        nix::libc::signal(nix::libc::SIGINT, handle_sigint as *const () as nix::libc::sighandler_t);
-    }
+    ctrlc::set_handler(|| {
+        RUNNING.store(false, std::sync::atomic::Ordering::SeqCst);
+    }).expect("Failed to set Ctrl+C handler");
 }
 
 fn run_screen(args: ScreenArgs, mirror: bool) {
