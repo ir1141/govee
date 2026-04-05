@@ -99,10 +99,11 @@ pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
 
 const SAMPLE_RATE: u32 = 44100;
 const FFT_SIZE: usize = 1024;
-const BUFFER_SIZE: usize = 2048;
+const BUFFER_SIZE: usize = 1024; // ~23ms window for responsive updates
 const BEAT_COOLDOWN_MS: u128 = 200;
 const BEAT_THRESHOLD: f64 = 1.4;
 const ENERGY_HISTORY: usize = 43; // ~1 second at 44100/1024
+const PEAK_DECAY: f64 = 0.97; // fast decay for dynamic range
 
 /// Frequency band boundaries in Hz
 const BAND_EDGES: [(f64, f64); 6] = [
@@ -313,7 +314,7 @@ fn capture_loop(
             if avg > band_peaks[band_idx] {
                 band_peaks[band_idx] = avg;
             } else {
-                band_peaks[band_idx] *= 0.995;
+                band_peaks[band_idx] *= PEAK_DECAY;
             }
             band_peaks[band_idx] = band_peaks[band_idx].max(0.001);
             bands[band_idx] = (avg / band_peaks[band_idx]).clamp(0.0, 1.0);
@@ -324,10 +325,11 @@ fn capture_loop(
         if rms > peak {
             peak = rms;
         } else {
-            peak *= 0.995;
+            peak *= PEAK_DECAY;
         }
         peak = peak.max(0.001);
-        let energy = (rms / peak).clamp(0.0, 1.0);
+        // Power curve (sqrt) to expand dynamic range — quiet parts more visible
+        let energy = (rms / peak).clamp(0.0, 1.0).sqrt();
 
         // Beat detection
         energy_history.push(energy);
