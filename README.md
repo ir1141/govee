@@ -6,7 +6,12 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 
 - **Device discovery** via multicast scan
 - **On/off, brightness, RGB color, color temperature** control
-- **Preset scenes** — static (movie, chill, party, sunset, ocean, forest, candlelight, aurora) and animated (fireplace, storm, lava, breathing, sunrise)
+- **30 themes** across 5 categories:
+  - *Static:* movie, chill, party, sunset, forest
+  - *Nature:* candlelight, fireplace, campfire, lava, ocean, aurora, northern-lights, rain
+  - *Vibes:* breathing, romantic, cozy, cyberpunk, vaporwave, nightclub
+  - *Functional:* storm, lightning, thunderstorm, starfield, pulse, rainbow, gradient-wave, sunrise
+  - *Seasonal:* christmas, halloween, snowfall
 - **Ambient mode** — syncs strip color to your desktop wallpaper theme via [Caelestia](https://github.com/caelestia-dots/)
 - **Screen mode** — real-time ambilight from Wayland screen capture (wlr-screencopy)
 - **Audio mode** — audio-reactive visualization with energy, frequency, beat, and drop modes
@@ -54,11 +59,14 @@ govee temp 4000
 # Query device status
 govee status
 
-# Apply a preset scene
-govee scene sunset
+# Apply a theme (static themes set color once)
+govee theme sunset
 
-# Animated scenes run until Ctrl+C
-govee scene fireplace
+# Animated themes loop until Ctrl+C
+govee theme fireplace
+
+# More segments for animated themes
+govee theme aurora --segments 10
 
 # Sleep mode (dark but stays responsive)
 govee sleep
