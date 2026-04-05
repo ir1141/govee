@@ -470,8 +470,8 @@ fn scene_storm(rng: &mut impl rand::RngExt, intensity: &mut [f64], n_seg: usize,
     if rng.random_range(0.0..1.0) < 0.08 {
         let idx = rng.random_range(0..n_seg);
         let spread = rng.random_range(1..=2);
-        for i in idx.saturating_sub(spread)..=(idx + spread).min(n_seg - 1) {
-            intensity[i] = rng.random_range(0.7..1.0);
+        for v in intensity.iter_mut().take((idx + spread).min(n_seg - 1) + 1).skip(idx.saturating_sub(spread)) {
+            *v = rng.random_range(0.7..1.0);
         }
     }
     (0..n_seg)
@@ -930,8 +930,6 @@ fn run_audio(args: AudioArgs, mirror: bool) {
     ctrlc_setup();
 
     let mut smoothed: Vec<(f64, f64, f64)> = vec![(0.0, 0.0, 0.0); n_seg];
-    let mut last_send_time = Instant::now();
-    let keepalive_interval = Duration::from_secs(2);
     let tick = Duration::from_secs_f64(1.0 / 60.0);
     let mut t: f64 = 0.0;
     let mut beat_hue: f64 = 0.0;
@@ -986,8 +984,6 @@ fn run_audio(args: AudioArgs, mirror: bool) {
             let (r, g, b) = send_colors[0];
             let _ = send_color(&ip, r, g, b);
         }
-        last_send_time = Instant::now();
-
         if args.verbose {
             let parts: Vec<String> = current_colors
                 .iter()
