@@ -13,7 +13,7 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 
 - Python 3.10+
 - A Govee LED strip with **LAN API enabled** (Govee Home app > Device > Settings > LAN Control)
-- For ambient mode: [`inotify-tools`](https://github.com/inotify-tools/inotify-tools) and [Caelestia](https://github.com/caelestia) (or any tool that writes a scheme.json)
+- For ambient mode: [`inotify-tools`](https://github.com/inotify-tools/inotify-tools) and [Caelestia](https://github.com/caelestia-dots/) (or any tool that writes a scheme.json)
 
 ## Usage
 
