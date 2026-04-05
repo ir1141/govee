@@ -15,6 +15,7 @@ pub enum VisMode {
     Energy,
     Frequency,
     Beat,
+    Drop,
 }
 
 /// Color palette for visualization
@@ -403,6 +404,7 @@ pub fn map_colors(
         VisMode::Energy => map_energy(audio, palette, n_seg, t),
         VisMode::Frequency => map_frequency(audio, palette, n_seg),
         VisMode::Beat => map_beat(audio, palette, n_seg, beat_hue, beat_decay),
+        VisMode::Drop => map_drop(audio, n_seg, beat_hue, beat_decay),
     }
 }
 
@@ -455,5 +457,55 @@ fn map_beat(
 
     (0..n_seg)
         .map(|_| palette_color(palette, intensity.clamp(0.0, 1.0)))
+        .collect()
+}
+
+/// Drop mode: stays dark, flashes on bass drops (deep red/purple) or treble hits (cyan/white).
+/// beat_hue tracks bass decay, beat_decay tracks treble decay.
+fn map_drop(
+    audio: &AudioState,
+    n_seg: usize,
+    bass_decay: &mut f64,
+    treble_decay: &mut f64,
+) -> Vec<(u8, u8, u8)> {
+    let bass = audio.bands[0].max(audio.bands[1]);
+    let treble = audio.bands[4].max(audio.bands[5]);
+
+    const TRIGGER: f64 = 0.65;
+
+    if bass > TRIGGER {
+        *bass_decay = 1.0;
+    } else {
+        *bass_decay *= 0.7; // fast fade — stays visible ~4-5 frames then gone
+    }
+
+    if treble > TRIGGER {
+        *treble_decay = 1.0;
+    } else {
+        *treble_decay *= 0.65;
+    }
+
+    // Smooth but decisive — cubic curve so it snaps on, eases off
+    let b = (*bass_decay).powi(2);
+    let t = (*treble_decay).powi(2);
+
+    (0..n_seg)
+        .map(|_| {
+            if b > t && b > 0.02 {
+                // Bass drop: deep red → bright magenta
+                let r = (80.0 + 175.0 * b) as u8;
+                let g = 0;
+                let b_ch = (40.0 * b) as u8;
+                (r, g, b_ch)
+            } else if t > 0.02 {
+                // Treble hit: cyan → white
+                let r = (180.0 * t) as u8;
+                let g = (220.0 * t) as u8;
+                let b_ch = (255.0 * t) as u8;
+                (r, g, b_ch)
+            } else {
+                (0, 0, 0) // dark
+            }
+        })
         .collect()
 }
