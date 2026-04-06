@@ -26,6 +26,9 @@ pub enum Message {
     DiscoveryTick,
     DevicesDiscovered(Vec<DeviceInfo>),
     SelectDevice(usize),
+    ApplyTheme(String),
+    StopMode,
+    ThemeFilterChanged(String),
 }
 
 pub struct App {
@@ -37,6 +40,10 @@ pub struct App {
     pub brightness: u8,
     pub color: (u8, u8, u8),
     pub color_temp: u16,
+    pub themes: Vec<govee_lan::ThemeDef>,
+    pub active_theme: Option<String>,
+    pub subprocess: Option<std::process::Child>,
+    pub theme_filter: String,
 }
 
 impl App {
@@ -65,6 +72,10 @@ impl App {
             brightness,
             color,
             color_temp,
+            themes: govee_lan::load_all_themes(),
+            active_theme: None,
+            subprocess: None,
+            theme_filter: "all".into(),
         };
         let init_task = Task::perform(
             async { govee_lan::scan_devices(Duration::from_secs(2)) },
@@ -176,6 +187,48 @@ impl App {
                     self.config.save();
                 }
             }
+            Message::ApplyTheme(name) => {
+                if let Some(ref mut child) = self.subprocess {
+                    crate::subprocess::kill(child);
+                    self.subprocess = None;
+                }
+                let theme = self.themes.iter().find(|t| t.name == name).cloned();
+                if let (Some(theme), Some(ref dev)) = (theme, &self.device) {
+                    match &theme.kind {
+                        govee_lan::ThemeKind::Solid { color } => {
+                            let ip = dev.ip.clone();
+                            let (r, g, b) = *color;
+                            self.active_theme = Some(name);
+                            return Task::perform(
+                                async move {
+                                    govee_lan::send_color(&ip, r, g, b).map_err(|e| e.to_string())
+                                },
+                                Message::DeviceCommandResult,
+                            );
+                        }
+                        govee_lan::ThemeKind::Animated { .. } => {
+                            let ip = dev.ip.clone();
+                            match crate::subprocess::spawn_govee(&["theme", &name], Some(&ip)) {
+                                Ok(child) => {
+                                    self.subprocess = Some(child);
+                                    self.active_theme = Some(name);
+                                }
+                                Err(_) => {}
+                            }
+                        }
+                    }
+                }
+            }
+            Message::StopMode => {
+                if let Some(ref mut child) = self.subprocess {
+                    crate::subprocess::kill(child);
+                }
+                self.subprocess = None;
+                self.active_theme = None;
+            }
+            Message::ThemeFilterChanged(filter) => {
+                self.theme_filter = filter;
+            }
         }
         Task::none()
     }
@@ -191,7 +244,7 @@ impl App {
 
         let page_content: Element<Message> = match self.page {
             Page::Controls => pages::controls::view(self),
-            Page::Themes => pages::themes::view(),
+            Page::Themes => pages::themes::view(self),
             Page::Screen => pages::screen::view(),
             Page::Audio => pages::audio::view(),
             Page::Ambient => pages::ambient::view(),

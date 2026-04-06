@@ -2,6 +2,7 @@ mod app;
 mod config;
 mod pages;
 mod style;
+mod subprocess;
 mod widgets;
 
 use iced::{Size, Theme};
