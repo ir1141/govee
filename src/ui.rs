@@ -38,7 +38,7 @@ pub fn error_hint(msg: &str, hint: &str) {
 // ── Brightness bar ─────────────────────────────────────────────────────────
 
 pub fn brightness_bar(percent: u8) -> String {
-    let filled = (percent as usize + 9) / 10; // round up: 1% = 1 block, 100% = 10
+    let filled = (percent as usize).div_ceil(10);
     let filled = filled.min(10);
     let empty = 10 - filled;
     format!(
@@ -98,9 +98,8 @@ pub fn discovery_scanning() {
 
 pub fn discovery_found(name: &str, ip: &str) {
     eprintln!(
-        "{} {} {} {} {}",
+        "{} Found {} {} {}",
         DIAMOND.cyan(),
-        "Found",
         name.white().bold(),
         "at".dimmed(),
         ip.cyan()
