@@ -111,12 +111,12 @@ fn main() {
         }
         Command::On => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
+            send_turn(&ip, true).ok();
             ui::info("Power", &format!("{}", "ON".green()));
         }
         Command::Off => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_command(&ip, "turn", serde_json::json!({"value": 0}), cli.debug);
+            send_turn(&ip, false).ok();
             ui::info("Power", &format!("{}", "OFF".red()));
         }
         Command::Brightness { value } => {
@@ -125,17 +125,12 @@ fn main() {
                 process::exit(1);
             }
             let ip = resolve_or_exit(ip.as_deref());
-            send_command(&ip, "brightness", serde_json::json!({"value": value}), cli.debug);
+            send_brightness(&ip, value).ok();
             ui::info("Brightness", &ui::brightness_bar(value));
         }
         Command::Color { r, g, b } => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_command(
-                &ip,
-                "colorwc",
-                serde_json::json!({"color": {"r": r, "g": g, "b": b}, "colorTemInKelvin": 0}),
-                cli.debug,
-            );
+            send_color(&ip, r, g, b).ok();
             ui::info("Color", &ui::color_swatch(r, g, b));
         }
         Command::Temp { kelvin } => {
@@ -144,12 +139,7 @@ fn main() {
                 process::exit(1);
             }
             let ip = resolve_or_exit(ip.as_deref());
-            send_command(
-                &ip,
-                "colorwc",
-                serde_json::json!({"color": {"r": 0, "g": 0, "b": 0}, "colorTemInKelvin": kelvin}),
-                cli.debug,
-            );
+            send_color_temp(&ip, kelvin).ok();
             ui::info("Temp", &format!("{}", format!("{kelvin}K").yellow()));
         }
         Command::Status => {
@@ -185,26 +175,19 @@ fn main() {
         }
         Command::Sleep => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_command(
-                &ip,
-                "colorwc",
-                serde_json::json!({"color": {"r": 0, "g": 0, "b": 0}, "colorTemInKelvin": 0}),
-                cli.debug,
-            );
-            send_command(&ip, "brightness", serde_json::json!({"value": 1}), cli.debug);
+            send_color(&ip, 0, 0, 0).ok();
+            std::thread::sleep(Duration::from_millis(50));
+            send_brightness(&ip, 1).ok();
             ui::info("Sleep", &format!("{}", "dark but responsive".dimmed()));
         }
         Command::Reset => {
             let ip = resolve_or_exit(ip.as_deref());
             let _ = razer_deactivate(&ip);
-            send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
-            send_command(&ip, "brightness", serde_json::json!({"value": 100}), cli.debug);
-            send_command(
-                &ip,
-                "colorwc",
-                serde_json::json!({"color": {"r": 0, "g": 0, "b": 0}, "colorTemInKelvin": 4000}),
-                cli.debug,
-            );
+            send_turn(&ip, true).ok();
+            std::thread::sleep(Duration::from_millis(50));
+            send_brightness(&ip, 100).ok();
+            std::thread::sleep(Duration::from_millis(50));
+            send_color_temp(&ip, 4000).ok();
             ui::info("Reset", &format!("{}", "on · 100% · 4000K warm white".dimmed()));
         }
         Command::Theme { name, brightness, segments } => {
