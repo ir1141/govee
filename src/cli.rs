@@ -13,7 +13,6 @@ fn parse_segments_127(s: &str) -> Result<usize, String> {
 
 #[derive(Parser)]
 #[command(name = "govee", about = "Control Govee LED strip lights over LAN")]
-#[command(after_help = format!("Themes:\n{}", themes::theme_list_display()))]
 pub struct Cli {
     #[arg(long, global = true, help = "Show raw UDP messages")]
     pub debug: bool,
@@ -62,9 +61,9 @@ pub enum Command {
     /// Reset device to a known good state (deactivates DreamView, turns on, full brightness, warm white)
     Reset,
     /// Apply a theme (static or animated). Static themes set a color once. Animated themes loop until Ctrl+C.
-    #[command(alias = "scene")]
+    #[command(alias = "scene", after_help = format!("Themes:\n{}", themes::theme_list_display()))]
     Theme {
-        #[arg(help = "Theme name (see 'govee theme --help' for list)")]
+        #[arg(help = "Theme name (see list below)")]
         name: String,
         #[arg(long, default_value_t = 60, help = "Strip brightness 1-100")]
         brightness: u8,
