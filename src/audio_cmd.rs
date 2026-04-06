@@ -104,7 +104,7 @@ pub fn run_audio(args: AudioArgs, mirror: bool) {
             let (r, g, b) = send_colors[0];
             let _ = send_color(&ip, r, g, b);
         }
-        {
+        if args.verbose {
             let meta = format!(
                 "E:{:.1} beat:{} · {:?}",
                 audio.energy, audio.beat, args.palette

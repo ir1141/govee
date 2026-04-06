@@ -4,7 +4,7 @@ use std::process;
 use std::time::{Duration, Instant};
 
 use crate::cli::ScreenArgs;
-use crate::{RUNNING, SCAN_TIMEOUT, ctrlc_setup};
+use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
 pub fn run_screen(args: ScreenArgs, mirror: bool) {
     let mut capturer = match ScreenCapturer::new() {
@@ -22,13 +22,7 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
         println!("Available outputs: {:?}", capturer.outputs());
     }
 
-    let ip = match resolve_ip(args.ip.as_deref(), SCAN_TIMEOUT) {
-        Ok(ip) => ip,
-        Err(e) => {
-            eprintln!("{e}");
-            process::exit(1);
-        }
-    };
+    let ip = resolve_or_exit(args.ip.as_deref());
     let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);

@@ -463,7 +463,7 @@ pub fn run_theme(
         None => {
             crate::ui::error_hint(
                 &format!("Unknown theme \"{name}\""),
-                "Run govee theme --list to see available themes",
+                "Run govee theme --help to see available themes",
             );
             std::process::exit(1);
         }
@@ -497,10 +497,10 @@ pub fn run_theme(
         }
         ThemeKind::Animated { behavior, delay } => {
             if let Err(e) = send_brightness(&ip, brightness) {
-                eprintln!("Failed to set brightness: {e}");
+                crate::ui::error(&format!("Failed to set brightness: {e}"));
             }
             if let Err(e) = razer_activate(&ip) {
-                eprintln!("Failed to activate DreamView: {e}");
+                crate::ui::error(&format!("Failed to activate DreamView: {e}"));
             }
             std::thread::sleep(Duration::from_millis(100));
 

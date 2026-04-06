@@ -18,7 +18,7 @@ fn load_user_themes() -> Vec<ThemeDef> {
     let entries = match fs::read_dir(&dir) {
         Ok(e) => e,
         Err(e) => {
-            eprintln!("Warning: could not read {}: {e}", dir.display());
+            crate::ui::error(&format!("Could not read {}: {e}", dir.display()));
             return vec![];
         }
     };
@@ -29,9 +29,9 @@ fn load_user_themes() -> Vec<ThemeDef> {
             match fs::read_to_string(&path) {
                 Ok(content) => match toml::from_str::<ThemeDef>(&content) {
                     Ok(theme) => themes.push(theme),
-                    Err(e) => eprintln!("Warning: skipping {}: {e}", path.display()),
+                    Err(e) => crate::ui::error(&format!("Skipping {}: {e}", path.display())),
                 },
-                Err(e) => eprintln!("Warning: could not read {}: {e}", path.display()),
+                Err(e) => crate::ui::error(&format!("Could not read {}: {e}", path.display())),
             }
         }
     }
