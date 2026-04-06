@@ -1,0 +1,21 @@
+[package]
+name = "govee-lan"
+version = "0.1.0"
+edition = "2021"
+description = "Control Govee LED strip lights over LAN — protocol library"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0.102"
+base64 = "0.22"
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+socket2 = { version = "0.5", features = ["all"] }
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client"] }
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+libpulse-binding = "2"
+rustfft = "6"
+bytemuck = "1.25.0"
+nix = { version = "0.29", features = ["fs", "mman", "poll"] }

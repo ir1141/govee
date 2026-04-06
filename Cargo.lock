@@ -299,6 +299,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "govee-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "ctrlc",
+ "dirs",
+ "govee-lan",
+ "inotify",
+ "nix 0.29.0",
+ "rand",
+ "serde",
+ "serde_json",
+ "toml",
+]
+
+[[package]]
 name = "govee-lan"
 version = "0.1.0"
 dependencies = [
@@ -306,18 +324,12 @@ dependencies = [
  "base64",
  "bytemuck",
  "clap",
- "colored",
- "ctrlc",
- "dirs",
- "inotify",
  "libpulse-binding",
  "nix 0.29.0",
- "rand",
  "rustfft",
  "serde",
  "serde_json",
  "socket2 0.5.10",
- "toml",
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",

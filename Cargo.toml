@@ -1,34 +1,3 @@
-[package]
-name = "govee-lan"
-version = "0.1.0"
-edition = "2021"
-description = "Control Govee LED strip lights over LAN — ambient sync, screen capture, and audio-reactive visualization"
-license = "MIT"
-repository = "https://github.com/ir1141/govee"
-keywords = ["govee", "led", "lan", "ambilight", "audio-reactive"]
-categories = ["command-line-utilities", "hardware-support"]
-
-[[bin]]
-name = "govee"
-path = "src/main.rs"
-
-[dependencies]
-base64 = "0.22"
-clap = { version = "4", features = ["derive"] }
-inotify = "0.11"
-nix = { version = "0.29", features = ["fs", "mman", "poll"] }
-rand = "0.10.0"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-socket2 = { version = "0.5", features = ["all"] }
-wayland-client = "0.31"
-wayland-protocols = { version = "0.32", features = ["client"] }
-wayland-protocols-wlr = { version = "0.3", features = ["client"] }
-libpulse-binding = "2"
-rustfft = "6"
-bytemuck = "1.25.0"
-ctrlc = "3.5.2"
-colored = "2"
-dirs = "6.0.0"
-anyhow = "1.0.102"
-toml = "0.8"
+[workspace]
+members = ["govee-lan", "govee-cli"]
+resolver = "2"
