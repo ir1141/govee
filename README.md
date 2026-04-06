@@ -6,16 +6,12 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 
 - **Device discovery** via multicast scan
 - **On/off, brightness, RGB color, color temperature** control
-- **30 themes** across 5 categories:
-  - *Static:* movie, chill, party, sunset, forest
-  - *Nature:* candlelight, fireplace, campfire, lava, ocean, aurora, northern-lights, rain
-  - *Vibes:* breathing, romantic, cozy, cyberpunk, vaporwave, nightclub
-  - *Functional:* storm, lightning, thunderstorm, starfield, pulse, rainbow, gradient-wave, sunrise
-  - *Seasonal:* christmas, halloween, snowfall
-- **Ambient mode** — syncs strip color to your desktop wallpaper theme via [Caelestia](https://github.com/caelestia-dots/)
-- **Screen mode** — real-time ambilight from Wayland screen capture (wlr-screencopy)
-- **Audio mode** — audio-reactive visualization with energy, frequency, beat, and drop modes
-- **DreamView** — multi-segment color control with optional gradient interpolation and mirror layout
+- **[Themes](#themes)** — 30 builtin animated and static themes, plus [custom TOML themes](#custom-themes)
+- **[Ambient mode](#ambient-wallpaper-sync)** — syncs strip color to your wallpaper theme via [Caelestia](https://github.com/caelestia-dots/)
+- **[Screen mode](#screen-capture-ambilight)** — real-time ambilight from Wayland screen capture
+- **[Audio mode](#audio-reactive)** — audio-reactive visualization with energy, frequency, beat, and drop modes
+- **DreamView** — multi-segment color control with gradient interpolation
+- **Mirror mode** — doubles segments in reverse for U-shaped strip layouts (`--mirror`)
 
 ## Requirements
 
@@ -59,17 +55,11 @@ govee temp 4000
 # Query device status
 govee status
 
-# Apply a theme (static themes set color once)
-govee theme sunset
-
-# Animated themes loop until Ctrl+C
-govee theme fireplace
-
-# More segments for animated themes
-govee theme aurora --segments 10
-
 # Sleep mode (dark but stays responsive)
 govee sleep
+
+# Reset to known good state (DreamView off, on, full brightness, warm white)
+govee reset
 ```
 
 All commands auto-discover the device. Use `--ip` to target a specific one:
@@ -77,6 +67,13 @@ All commands auto-discover the device. Use `--ip` to target a specific one:
 ```bash
 govee on --ip 192.168.1.42
 ```
+
+#### Global flags
+
+| Flag | Description |
+|------|-------------|
+| `--mirror` | Double segments by appending a reversed copy (for U-shaped strip layouts) |
+| `--debug` | Show raw UDP messages sent to the device |
 
 ### Screen capture (ambilight)
 
@@ -100,6 +97,9 @@ govee screen --output DP-1
 
 # Simple single-color mode (no DreamView)
 govee screen --no-dreamview
+
+# Verbose — show available outputs and per-frame details
+govee screen --verbose
 ```
 
 ### Ambient wallpaper sync
@@ -133,10 +133,164 @@ govee audio --mode drop
 
 # Tune sensitivity and segment count
 govee audio --segments 10 --sensitivity 1.5 --gradient
+
+# Verbose — show live energy/beat status per frame
+govee audio --verbose
 ```
 
 **Visualization modes:** `energy`, `frequency`, `beat`, `drop`
 **Palettes:** `fire`, `ocean`, `forest`, `neon`, `ice`, `sunset`, `rainbow`
+
+### Themes
+
+30 builtin themes across 5 categories:
+
+| Category | Themes |
+|----------|--------|
+| **Static** | movie, chill, party, sunset, forest |
+| **Nature** | candlelight, fireplace, campfire, lava, ocean, aurora, northern-lights, rain |
+| **Vibes** | breathing, romantic, cozy, cyberpunk, vaporwave, nightclub |
+| **Functional** | storm, lightning, thunderstorm, starfield, pulse, rainbow, gradient-wave, sunrise |
+| **Seasonal** | christmas, halloween, snowfall |
+
+**Static** themes set a single color and exit. **Animated** themes use DreamView for per-segment color control and loop until Ctrl+C.
+
+```bash
+# Static — sets color and exits
+govee theme sunset
+
+# Animated — loops with DreamView segments
+govee theme fireplace
+
+# More segments, custom brightness
+govee theme aurora --segments 10 --brightness 40
+
+# Mirror for U-shaped strip layout
+govee --mirror theme cyberpunk --segments 8
+```
+
+#### Behavior types
+
+Animated themes are built from 13 behavior types that control how colors move across the strip:
+
+| Behavior | Description |
+|----------|-------------|
+| **heat** | Flickering fire simulation with sparks and dim spots |
+| **wave** | Layered sine waves with configurable speed and frequency |
+| **breathe** | Smooth pulsing through a color palette |
+| **flash** | Random flashes over a slow-moving base wave |
+| **particles** | Colored dots drifting across a background |
+| **twinkle** | Random pixels lighting up and fading out |
+| **hue-rotate** | Continuous HSV hue rotation across all segments |
+| **gradient-wave** | Two-color gradient oscillating back and forth |
+| **strobe** | Rapid color cycling with random flashes |
+| **alternating** | Shifting color blocks with sparkle accents |
+| **drift** | Palette scrolling smoothly across the strip |
+| **radiate-pulse** | Single-color pulse radiating outward from center |
+| **progression** | Slow palette evolution over a set duration |
+
+#### Custom themes
+
+Create TOML files in `~/.config/govee/themes/` to add your own or override builtins. Each file defines one theme with a `name`, `category`, and `kind` (either `solid` or `animated`).
+
+##### Static theme
+
+Sets a single RGB color and exits:
+
+```toml
+# ~/.config/govee/themes/deep-purple.toml
+name = "deep-purple"
+category = "vibes"
+
+[kind]
+type = "solid"
+color = [80, 0, 160]
+```
+
+##### Animated theme
+
+Loops a behavior across DreamView segments until Ctrl+C:
+
+```toml
+# ~/.config/govee/themes/lava-lamp.toml
+name = "lava-lamp"
+category = "vibes"
+
+[kind]
+type = "animated"
+
+[kind.delay]
+random = [80, 200]
+
+[kind.behavior]
+type = "breathe"
+speed = 0.4
+power = 2
+
+[[kind.behavior.palette]]
+pos = 0.0
+r = 200
+g = 0
+b = 80
+
+[[kind.behavior.palette]]
+pos = 0.5
+r = 255
+g = 50
+b = 0
+
+[[kind.behavior.palette]]
+pos = 1.0
+r = 200
+g = 0
+b = 80
+```
+
+##### Theme file structure
+
+Every animated theme has a **delay** and a **behavior**:
+
+**Delay** controls the tick rate between frames:
+
+| Delay | TOML | Description |
+|-------|------|-------------|
+| Fixed | `fixed = 80` | Constant interval in ms |
+| Random | `random = [80, 200]` | Random interval between min/max ms |
+
+**Palette anchors** define color stops that get interpolated. Each anchor has a `pos` (0.0–1.0) and `r`, `g`, `b` (0–255):
+
+```toml
+[[kind.behavior.palette]]
+pos = 0.0      # start of gradient
+r = 255
+g = 100
+b = 0
+```
+
+**Behavior parameters** vary by type. Here are the most useful ones:
+
+| Behavior | Key parameters |
+|----------|---------------|
+| **heat** | `palette`, `volatility` (flicker amount), `spark_chance`, `spark_boost`, `dim_chance`, `dim_range = [min, max]`, `diffusion` |
+| **wave** | `palette`, `waves` (array of `{time_speed, spatial_freq, phase_offset}`), `weights` |
+| **breathe** | `palette`, `speed` (pulse rate), `power` (curve sharpness, higher = sharper) |
+| **flash** | `base_palette`, `flash_palette`, `decay`, `flash_chance`, `spread = [min, max]`, `base_wave_speed`, `base_spatial_freq`, `flash_threshold` |
+| **particles** | `bg = [r, g, b]`, `palette`, `speed`, `spawn_chance`, `bright_chance` |
+| **twinkle** | `bg = [r, g, b]`, `colors` (array of `[r, g, b]`), `on_chance`, `fade_speed` |
+| **hue-rotate** | `speed`, `saturation` (0.0–1.0), `value` (0.0–1.0) |
+| **gradient-wave** | `color_a = [r, g, b]`, `color_b = [r, g, b]`, `speed` |
+| **strobe** | `colors` (array of `[r, g, b]`), `cycle_speed`, `flash_chance` |
+| **alternating** | `colors` (array of `[r, g, b]`), `sparkle = [r, g, b]`, `sparkle_chance`, `shift_speed` |
+| **drift** | `palette`, `speed` |
+| **radiate-pulse** | `color = [r, g, b]`, `speed`, `width` |
+| **progression** | `palette`, `duration_secs`, `spatial_spread` |
+
+##### Tips
+
+- To override a builtin, use the same name — your version takes priority
+- Category can be anything; custom categories show up in `govee theme --help`
+- Look at the builtin themes in `src/theme_defs.rs` for working examples of every behavior type
+- Start with **breathe**, **drift**, or **gradient-wave** — they need the fewest parameters
 
 ## How it works
 
