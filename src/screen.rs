@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use crate::cli::ScreenArgs;
 use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
-pub fn run_screen(args: ScreenArgs, mirror: bool) {
+pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
     let mut capturer = match ScreenCapturer::new() {
         Ok(c) => c,
         Err(e) => {
@@ -22,7 +22,7 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
         println!("Available outputs: {:?}", capturer.outputs());
     }
 
-    let ip = resolve_or_exit(args.ip.as_deref());
+    let ip = resolve_or_exit(ip.as_deref());
     let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);

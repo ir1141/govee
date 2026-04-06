@@ -56,6 +56,8 @@ fn resolve_or_exit(ip: Option<&str>) -> String {
 fn main() {
     let cli = Cli::parse();
 
+    let ip = cli.ip;
+
     match cli.command {
         Command::Scan => {
             ui::discovery_scanning();
@@ -81,17 +83,17 @@ fn main() {
                 }
             }
         }
-        Command::On { ip } => {
+        Command::On => {
             let ip = resolve_or_exit(ip.as_deref());
             send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
             ui::info("Power", &format!("{}", "ON".green()));
         }
-        Command::Off { ip } => {
+        Command::Off => {
             let ip = resolve_or_exit(ip.as_deref());
             send_command(&ip, "turn", serde_json::json!({"value": 0}), cli.debug);
             ui::info("Power", &format!("{}", "OFF".red()));
         }
-        Command::Brightness { value, ip } => {
+        Command::Brightness { value } => {
             if !(1..=100).contains(&value) {
                 ui::error("Brightness must be 1-100");
                 process::exit(1);
@@ -100,7 +102,7 @@ fn main() {
             send_command(&ip, "brightness", serde_json::json!({"value": value}), cli.debug);
             ui::info("Brightness", &ui::brightness_bar(value));
         }
-        Command::Color { r, g, b, ip } => {
+        Command::Color { r, g, b } => {
             let ip = resolve_or_exit(ip.as_deref());
             send_command(
                 &ip,
@@ -110,7 +112,7 @@ fn main() {
             );
             ui::info("Color", &ui::color_swatch(r, g, b));
         }
-        Command::Temp { kelvin, ip } => {
+        Command::Temp { kelvin } => {
             if !(2000..=9000).contains(&kelvin) {
                 ui::error("Color temperature must be 2000-9000K");
                 process::exit(1);
@@ -124,7 +126,7 @@ fn main() {
             );
             ui::info("Temp", &format!("{}", format!("{kelvin}K").yellow()));
         }
-        Command::Status { ip } => {
+        Command::Status => {
             let ip = resolve_or_exit(ip.as_deref());
             let status = send_command(&ip, "devStatus", serde_json::json!({}), cli.debug);
             match status {
@@ -168,7 +170,7 @@ fn main() {
                 }
             }
         }
-        Command::Sleep { ip } => {
+        Command::Sleep => {
             let ip = resolve_or_exit(ip.as_deref());
             send_command(
                 &ip,
@@ -179,7 +181,7 @@ fn main() {
             send_command(&ip, "brightness", serde_json::json!({"value": 1}), cli.debug);
             ui::info("Sleep", &format!("{}", "dark but responsive".dimmed()));
         }
-        Command::Reset { ip } => {
+        Command::Reset => {
             let ip = resolve_or_exit(ip.as_deref());
             let _ = razer_deactivate(&ip);
             send_command(&ip, "turn", serde_json::json!({"value": 1}), cli.debug);
@@ -192,11 +194,11 @@ fn main() {
             );
             ui::info("Reset", &format!("{}", "on · 100% · 4000K warm white".dimmed()));
         }
-        Command::Theme { name, ip, brightness, segments } => {
+        Command::Theme { name, brightness, segments } => {
             themes::run_theme(&name.to_lowercase(), ip, brightness, segments, cli.mirror, cli.debug);
         }
-        Command::Ambient(args) => ambient::run_ambient(args),
-        Command::Screen(args) => screen::run_screen(args, cli.mirror),
-        Command::Audio(args) => audio_cmd::run_audio(args, cli.mirror),
+        Command::Ambient(args) => ambient::run_ambient(args, ip),
+        Command::Screen(args) => screen::run_screen(args, ip, cli.mirror),
+        Command::Audio(args) => audio_cmd::run_audio(args, ip, cli.mirror),
     }
 }

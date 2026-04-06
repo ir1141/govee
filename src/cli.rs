@@ -13,6 +13,9 @@ pub struct Cli {
     #[arg(long, global = true, help = "Mirror segments for U-shaped strip layout")]
     pub mirror: bool,
 
+    #[arg(long, global = true, help = "Device IP (auto-discovers if omitted)")]
+    pub ip: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -22,21 +25,13 @@ pub enum Command {
     /// Discover Govee devices on the network
     Scan,
     /// Turn on
-    On {
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
-    },
+    On,
     /// Turn off
-    Off {
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
-    },
+    Off,
     /// Set brightness (1-100)
     Brightness {
         #[arg(help = "Brightness level (1-100)")]
         value: u8,
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
     },
     /// Set RGB color
     Color {
@@ -46,38 +41,23 @@ pub enum Command {
         g: u8,
         #[arg(help = "Blue (0-255)")]
         b: u8,
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
     },
     /// Set color temperature (2000-9000K)
     Temp {
         #[arg(help = "Color temperature in Kelvin (2000-9000)")]
         kelvin: u16,
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
     },
     /// Query device status
-    Status {
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
-    },
+    Status,
     /// Dim to near-black while keeping device responsive to commands (avoids rediscovery delay of full off)
-    Sleep {
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
-    },
+    Sleep,
     /// Reset device to a known good state (deactivates DreamView, turns on, full brightness, warm white)
-    Reset {
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
-    },
+    Reset,
     /// Apply a theme (static or animated). Static themes set a color once. Animated themes loop until Ctrl+C.
     #[command(alias = "scene")]
     Theme {
         #[arg(help = "Theme name (see 'govee theme --help' for list)")]
         name: String,
-        #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-        ip: Option<String>,
         #[arg(long, default_value_t = 60, help = "Strip brightness 1-100")]
         brightness: u8,
         #[arg(long, default_value_t = 5, value_parser = |s: &str| -> Result<usize, String> {
@@ -97,9 +77,6 @@ pub enum Command {
 
 #[derive(Args)]
 pub struct AmbientArgs {
-    #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-    pub ip: Option<String>,
-
     #[arg(
         long,
         default_value = "primary",
@@ -119,9 +96,6 @@ pub struct AmbientArgs {
 
 #[derive(Args)]
 pub struct ScreenArgs {
-    #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-    pub ip: Option<String>,
-
     #[arg(long, default_value_t = 10, help = "Screen capture rate")]
     pub fps: u32,
 
@@ -175,9 +149,6 @@ pub struct ScreenArgs {
 
 #[derive(Args)]
 pub struct AudioArgs {
-    #[arg(long, help = "Device IP (auto-discovers if omitted)")]
-    pub ip: Option<String>,
-
     #[arg(long, default_value = "energy", help = "Visualization mode")]
     pub mode: VisMode,
 

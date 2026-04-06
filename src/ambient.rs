@@ -7,7 +7,7 @@ use std::time::Duration;
 use crate::cli::AmbientArgs;
 use crate::{RUNNING, SCAN_TIMEOUT, ctrlc_setup};
 
-pub fn run_ambient(args: AmbientArgs) {
+pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
     let valid_colors = [
         "primary",
         "secondary",
@@ -24,15 +24,15 @@ pub fn run_ambient(args: AmbientArgs) {
         process::exit(1);
     }
 
-    if args.ip.is_none() {
+    if ip.is_none() {
         crate::ui::discovery_scanning();
     }
-    let ip = match resolve_ip(args.ip.as_deref(), SCAN_TIMEOUT) {
-        Ok(ip) => {
-            if args.ip.is_none() {
-                crate::ui::discovery_found("device", &ip);
+    let ip = match resolve_ip(ip.as_deref(), SCAN_TIMEOUT) {
+        Ok(resolved) => {
+            if ip.is_none() {
+                crate::ui::discovery_found("device", &resolved);
             }
-            ip
+            resolved
         }
         Err(_) => {
             crate::ui::error_hint("No device found", "Is the strip powered on and connected to WiFi?");

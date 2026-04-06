@@ -6,8 +6,8 @@ use std::time::{Duration, Instant};
 use crate::cli::AudioArgs;
 use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
-pub fn run_audio(args: AudioArgs, mirror: bool) {
-    let ip = resolve_or_exit(args.ip.as_deref());
+pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
+    let ip = resolve_or_exit(ip.as_deref());
 
     let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
