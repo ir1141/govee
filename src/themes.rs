@@ -499,7 +499,7 @@ pub fn run_theme(
     brightness: u8,
     segments: usize,
     mirror: bool,
-    debug: bool,
+    _debug: bool,
 ) {
     let theme = match get_theme(name) {
         Some(t) => t,
@@ -516,22 +516,12 @@ pub fn run_theme(
 
     match &theme.kind {
         ThemeKind::Solid { color } => {
-            send_command(&ip, "turn", serde_json::json!({"value": 1}), debug);
-            send_command(
-                &ip,
-                "brightness",
-                serde_json::json!({"value": brightness}),
-                debug,
-            );
-            send_command(
-                &ip,
-                "colorwc",
-                serde_json::json!({
-                    "color": {"r": color.0, "g": color.1, "b": color.2},
-                    "colorTemInKelvin": 0,
-                }),
-                debug,
-            );
+            let _ = razer_deactivate(&ip);
+            send_turn(&ip, true).ok();
+            std::thread::sleep(Duration::from_millis(50));
+            send_brightness(&ip, brightness).ok();
+            std::thread::sleep(Duration::from_millis(50));
+            send_color(&ip, color.0, color.1, color.2).ok();
             {
                 use colored::Colorize;
                 crate::ui::info("Theme", &format!("{} {}", name.white().bold(), format!("[{}]", theme.category).dimmed()));
