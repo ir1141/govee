@@ -240,212 +240,255 @@ fn render_frame(
     t: f64,
 ) -> Vec<Rgb> {
     match behavior {
-        Behavior::Heat {
-            palette, volatility, spark_chance, spark_boost,
-            dim_chance, dim_range, diffusion,
-        } => {
-            for s in state.iter_mut().take(n_seg) {
-                *s += rng.random_range(-*volatility..*volatility);
-                *s = s.clamp(0.0, 1.0);
-            }
-            if *dim_chance > 0.0 && rng.random_range(0.0..1.0) < *dim_chance {
-                let idx = rng.random_range(0..n_seg);
-                state[idx] *= rng.random_range(dim_range.0..dim_range.1);
-            }
-            if rng.random_range(0.0..1.0) < *spark_chance {
-                let idx = rng.random_range(0..n_seg);
-                state[idx] = (state[idx] + spark_boost).min(1.0);
-            }
-            if *diffusion > 0.0 {
-                let snap: Vec<f64> = state[..n_seg].to_vec();
-                for i in 0..n_seg {
-                    let left = if i > 0 { snap[i - 1] } else { snap[i] };
-                    let right = if i < n_seg - 1 { snap[i + 1] } else { snap[i] };
-                    state[i] = snap[i] * (1.0 - 2.0 * diffusion) + left * diffusion + right * diffusion;
-                }
-            }
-            state[..n_seg].iter().map(|&h| palette_sample(palette, h)).collect()
-        }
+        Behavior::Heat { palette, volatility, spark_chance, spark_boost, dim_chance, dim_range, diffusion } =>
+            render_heat(palette, *volatility, *spark_chance, *spark_boost, *dim_chance, *dim_range, *diffusion, rng, state, n_seg),
+        Behavior::Wave { palette, waves, weights } =>
+            render_wave(palette, waves, weights, n_seg, t),
+        Behavior::Breathe { palette, speed, power } =>
+            render_breathe(palette, *speed, *power, n_seg, t),
+        Behavior::Flash { base_palette, flash_palette, decay, flash_chance, spread, base_wave_speed, base_spatial_freq, flash_threshold } =>
+            render_flash(base_palette, flash_palette, *decay, *flash_chance, *spread, *base_wave_speed, *base_spatial_freq, *flash_threshold, rng, state, n_seg, t),
+        Behavior::Particles { bg, palette, speed, spawn_chance, bright_chance } =>
+            render_particles(*bg, palette, *speed, *spawn_chance, *bright_chance, rng, state, n_seg),
+        Behavior::Twinkle { bg, colors, on_chance, fade_speed } =>
+            render_twinkle(*bg, colors, *on_chance, *fade_speed, rng, state, n_seg),
+        Behavior::HueRotate { speed, saturation, value } =>
+            render_hue_rotate(*speed, *saturation, *value, n_seg, t),
+        Behavior::GradientWave { color_a, color_b, speed } =>
+            render_gradient_wave(*color_a, *color_b, *speed, n_seg, t),
+        Behavior::Strobe { colors, cycle_speed, flash_chance } =>
+            render_strobe(colors, *cycle_speed, *flash_chance, rng, n_seg, t),
+        Behavior::Alternating { colors, sparkle, sparkle_chance, shift_speed } =>
+            render_alternating(colors, *sparkle, *sparkle_chance, *shift_speed, rng, n_seg, t),
+        Behavior::Drift { palette, speed } =>
+            render_drift(palette, *speed, n_seg, t),
+        Behavior::RadiatePulse { color, speed, width } =>
+            render_radiate_pulse(*color, *speed, *width, n_seg, t),
+        Behavior::Progression { palette, duration_secs, spatial_spread } =>
+            render_progression(palette, *duration_secs, *spatial_spread, n_seg, t),
+    }
+}
 
-        Behavior::Wave { palette, waves, weights } => {
-            (0..n_seg)
-                .map(|i| {
-                    let mut val = 0.0;
-                    let mut tw = 0.0;
-                    for (j, w_param) in waves.iter().enumerate() {
-                        let w = weights.get(j).copied().unwrap_or(1.0);
-                        val += ((t * w_param.time_speed + i as f64 * w_param.spatial_freq + w_param.phase_offset).sin() * 0.5 + 0.5) * w;
-                        tw += w;
-                    }
-                    palette_sample(palette, val / tw)
-                })
-                .collect()
-        }
-
-        Behavior::Breathe { palette, speed, power } => {
-            let breath = ((t * speed).sin() * 0.5 + 0.5).powi(*power as i32);
-            let color = palette_sample(palette, breath);
-            vec![color; n_seg]
-        }
-
-        Behavior::Flash {
-            base_palette, flash_palette, decay, flash_chance, spread,
-            base_wave_speed, base_spatial_freq, flash_threshold,
-        } => {
-            for s in state.iter_mut().take(n_seg) {
-                *s *= decay;
-            }
-            if rng.random_range(0.0..1.0) < *flash_chance {
-                let center = rng.random_range(0..n_seg);
-                let sp = rng.random_range(spread.0..=spread.1);
-                let lo = center.saturating_sub(sp);
-                let hi = (center + sp).min(n_seg - 1);
-                for s in state[lo..=hi].iter_mut() {
-                    *s = rng.random_range(0.7..1.0);
-                }
-            }
-            (0..n_seg)
-                .map(|i| {
-                    if state[i] > *flash_threshold {
-                        palette_sample(flash_palette, state[i])
-                    } else {
-                        let bp = (t * base_wave_speed + i as f64 * base_spatial_freq).sin() * 0.15 + 0.5;
-                        palette_sample(base_palette, bp)
-                    }
-                })
-                .collect()
-        }
-
-        Behavior::Particles { bg, palette, speed, spawn_chance, bright_chance } => {
-            for s in state.iter_mut().take(n_seg) {
-                *s *= 1.0 - speed;
-            }
-            for i in (1..n_seg).rev() {
-                state[i] = state[i - 1];
-            }
-            state[0] = 0.0;
-            if rng.random_range(0.0..1.0) < *spawn_chance {
-                state[0] = if rng.random_range(0.0..1.0) < *bright_chance {
-                    1.0
-                } else {
-                    rng.random_range(0.3..0.7)
-                };
-            }
-            state[..n_seg]
-                .iter()
-                .map(|&v| {
-                    if v > 0.02 {
-                        palette_sample(palette, v)
-                    } else {
-                        *bg
-                    }
-                })
-                .collect()
-        }
-
-        Behavior::Twinkle { bg, colors, on_chance, fade_speed } => {
-            for s in state.iter_mut().take(n_seg) {
-                if *s > 0.0 {
-                    *s = (*s - fade_speed).max(0.0);
-                } else if rng.random_range(0.0..1.0) < *on_chance {
-                    *s = 1.0;
-                }
-            }
-            (0..n_seg)
-                .map(|i| {
-                    if state[i] > 0.02 {
-                        let c = colors[i % colors.len()];
-                        lerp_rgb(*bg, c, state[i])
-                    } else {
-                        *bg
-                    }
-                })
-                .collect()
-        }
-
-        Behavior::HueRotate { speed, saturation, value } => {
-            (0..n_seg)
-                .map(|i| {
-                    let hue = (t * speed + i as f64 / n_seg as f64).fract();
-                    hsv_to_rgb(hue, *saturation, *value)
-                })
-                .collect()
-        }
-
-        Behavior::GradientWave { color_a, color_b, speed } => {
-            (0..n_seg)
-                .map(|i| {
-                    let wave =
-                        (t * speed + i as f64 * std::f64::consts::PI / n_seg as f64).sin() * 0.5
-                            + 0.5;
-                    lerp_rgb(*color_a, *color_b, wave)
-                })
-                .collect()
-        }
-
-        Behavior::Strobe { colors, cycle_speed, flash_chance } => {
-            (0..n_seg)
-                .map(|i| {
-                    if rng.random_range(0.0..1.0) < *flash_chance {
-                        (255, 255, 255)
-                    } else {
-                        let idx = ((t * cycle_speed) as usize + i) % colors.len();
-                        colors[idx]
-                    }
-                })
-                .collect()
-        }
-
-        Behavior::Alternating { colors, sparkle, sparkle_chance, shift_speed } => {
-            let shift = (t * shift_speed) as usize;
-            (0..n_seg)
-                .map(|i| {
-                    if rng.random_range(0.0..1.0) < *sparkle_chance {
-                        *sparkle
-                    } else {
-                        colors[(i + shift) % colors.len()]
-                    }
-                })
-                .collect()
-        }
-
-        Behavior::Drift { palette, speed } => {
-            (0..n_seg)
-                .map(|i| {
-                    let pos = ((i as f64 / n_seg as f64) + t * speed).fract();
-                    palette_sample(palette, pos)
-                })
-                .collect()
-        }
-
-        Behavior::RadiatePulse { color, speed, width } => {
-            let center = n_seg as f64 / 2.0;
-            let pulse_pos = (t * speed).fract();
-            (0..n_seg)
-                .map(|i| {
-                    let dist = (i as f64 - center).abs() / center;
-                    let diff = (dist - pulse_pos).abs();
-                    let bright = (1.0 - diff / width).max(0.0);
-                    (
-                        (color.0 as f64 * bright) as u8,
-                        (color.1 as f64 * bright) as u8,
-                        (color.2 as f64 * bright) as u8,
-                    )
-                })
-                .collect()
-        }
-
-        Behavior::Progression { palette, duration_secs, spatial_spread } => {
-            let progress = (t / duration_secs).min(1.0);
-            (0..n_seg)
-                .map(|i| {
-                    let p = (progress + (i as f64 - n_seg as f64 / 2.0) * spatial_spread)
-                        .clamp(0.0, 1.0);
-                    palette_sample(palette, p)
-                })
-                .collect()
+#[allow(clippy::too_many_arguments)]
+fn render_heat(
+    palette: &[PA], volatility: f64, spark_chance: f64, spark_boost: f64,
+    dim_chance: f64, dim_range: (f64, f64), diffusion: f64,
+    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize,
+) -> Vec<Rgb> {
+    for s in state.iter_mut().take(n_seg) {
+        *s += rng.random_range(-volatility..volatility);
+        *s = s.clamp(0.0, 1.0);
+    }
+    if dim_chance > 0.0 && rng.random_range(0.0..1.0) < dim_chance {
+        let idx = rng.random_range(0..n_seg);
+        state[idx] *= rng.random_range(dim_range.0..dim_range.1);
+    }
+    if rng.random_range(0.0..1.0) < spark_chance {
+        let idx = rng.random_range(0..n_seg);
+        state[idx] = (state[idx] + spark_boost).min(1.0);
+    }
+    if diffusion > 0.0 {
+        let snap: Vec<f64> = state[..n_seg].to_vec();
+        for i in 0..n_seg {
+            let left = if i > 0 { snap[i - 1] } else { snap[i] };
+            let right = if i < n_seg - 1 { snap[i + 1] } else { snap[i] };
+            state[i] = snap[i] * (1.0 - 2.0 * diffusion) + left * diffusion + right * diffusion;
         }
     }
+    state[..n_seg].iter().map(|&h| palette_sample(palette, h)).collect()
+}
+
+fn render_wave(palette: &[PA], waves: &[WaveParam], weights: &[f64], n_seg: usize, t: f64) -> Vec<Rgb> {
+    (0..n_seg)
+        .map(|i| {
+            let mut val = 0.0;
+            let mut tw = 0.0;
+            for (j, w_param) in waves.iter().enumerate() {
+                let w = weights.get(j).copied().unwrap_or(1.0);
+                val += ((t * w_param.time_speed + i as f64 * w_param.spatial_freq + w_param.phase_offset).sin() * 0.5 + 0.5) * w;
+                tw += w;
+            }
+            palette_sample(palette, val / tw)
+        })
+        .collect()
+}
+
+fn render_breathe(palette: &[PA], speed: f64, power: u32, n_seg: usize, t: f64) -> Vec<Rgb> {
+    let breath = ((t * speed).sin() * 0.5 + 0.5).powi(power as i32);
+    let color = palette_sample(palette, breath);
+    vec![color; n_seg]
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_flash(
+    base_palette: &[PA], flash_palette: &[PA], decay: f64, flash_chance: f64,
+    spread: (usize, usize), base_wave_speed: f64, base_spatial_freq: f64, flash_threshold: f64,
+    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize, t: f64,
+) -> Vec<Rgb> {
+    for s in state.iter_mut().take(n_seg) {
+        *s *= decay;
+    }
+    if rng.random_range(0.0..1.0) < flash_chance {
+        let center = rng.random_range(0..n_seg);
+        let sp = rng.random_range(spread.0..=spread.1);
+        let lo = center.saturating_sub(sp);
+        let hi = (center + sp).min(n_seg - 1);
+        for s in state[lo..=hi].iter_mut() {
+            *s = rng.random_range(0.7..1.0);
+        }
+    }
+    (0..n_seg)
+        .map(|i| {
+            if state[i] > flash_threshold {
+                palette_sample(flash_palette, state[i])
+            } else {
+                let bp = (t * base_wave_speed + i as f64 * base_spatial_freq).sin() * 0.15 + 0.5;
+                palette_sample(base_palette, bp)
+            }
+        })
+        .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_particles(
+    bg: Rgb, palette: &[PA], speed: f64, spawn_chance: f64, bright_chance: f64,
+    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize,
+) -> Vec<Rgb> {
+    for s in state.iter_mut().take(n_seg) {
+        *s *= 1.0 - speed;
+    }
+    for i in (1..n_seg).rev() {
+        state[i] = state[i - 1];
+    }
+    state[0] = 0.0;
+    if rng.random_range(0.0..1.0) < spawn_chance {
+        state[0] = if rng.random_range(0.0..1.0) < bright_chance {
+            1.0
+        } else {
+            rng.random_range(0.3..0.7)
+        };
+    }
+    state[..n_seg]
+        .iter()
+        .map(|&v| {
+            if v > 0.02 {
+                palette_sample(palette, v)
+            } else {
+                bg
+            }
+        })
+        .collect()
+}
+
+fn render_twinkle(
+    bg: Rgb, colors: &[Rgb], on_chance: f64, fade_speed: f64,
+    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize,
+) -> Vec<Rgb> {
+    for s in state.iter_mut().take(n_seg) {
+        if *s > 0.0 {
+            *s = (*s - fade_speed).max(0.0);
+        } else if rng.random_range(0.0..1.0) < on_chance {
+            *s = 1.0;
+        }
+    }
+    (0..n_seg)
+        .map(|i| {
+            if state[i] > 0.02 {
+                let c = colors[i % colors.len()];
+                lerp_rgb(bg, c, state[i])
+            } else {
+                bg
+            }
+        })
+        .collect()
+}
+
+fn render_hue_rotate(speed: f64, saturation: f64, value: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
+    (0..n_seg)
+        .map(|i| {
+            let hue = (t * speed + i as f64 / n_seg as f64).fract();
+            hsv_to_rgb(hue, saturation, value)
+        })
+        .collect()
+}
+
+fn render_gradient_wave(color_a: Rgb, color_b: Rgb, speed: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
+    (0..n_seg)
+        .map(|i| {
+            let wave =
+                (t * speed + i as f64 * std::f64::consts::PI / n_seg as f64).sin() * 0.5 + 0.5;
+            lerp_rgb(color_a, color_b, wave)
+        })
+        .collect()
+}
+
+fn render_strobe(
+    colors: &[Rgb], cycle_speed: f64, flash_chance: f64,
+    rng: &mut impl RngExt, n_seg: usize, t: f64,
+) -> Vec<Rgb> {
+    (0..n_seg)
+        .map(|i| {
+            if rng.random_range(0.0..1.0) < flash_chance {
+                (255, 255, 255)
+            } else {
+                let idx = ((t * cycle_speed) as usize + i) % colors.len();
+                colors[idx]
+            }
+        })
+        .collect()
+}
+
+fn render_alternating(
+    colors: &[Rgb], sparkle: Rgb, sparkle_chance: f64, shift_speed: f64,
+    rng: &mut impl RngExt, n_seg: usize, t: f64,
+) -> Vec<Rgb> {
+    let shift = (t * shift_speed) as usize;
+    (0..n_seg)
+        .map(|i| {
+            if rng.random_range(0.0..1.0) < sparkle_chance {
+                sparkle
+            } else {
+                colors[(i + shift) % colors.len()]
+            }
+        })
+        .collect()
+}
+
+fn render_drift(palette: &[PA], speed: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
+    (0..n_seg)
+        .map(|i| {
+            let pos = ((i as f64 / n_seg as f64) + t * speed).fract();
+            palette_sample(palette, pos)
+        })
+        .collect()
+}
+
+fn render_radiate_pulse(color: Rgb, speed: f64, width: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
+    let center = n_seg as f64 / 2.0;
+    let pulse_pos = (t * speed).fract();
+    (0..n_seg)
+        .map(|i| {
+            let dist = (i as f64 - center).abs() / center;
+            let diff = (dist - pulse_pos).abs();
+            let bright = (1.0 - diff / width).max(0.0);
+            (
+                (color.0 as f64 * bright) as u8,
+                (color.1 as f64 * bright) as u8,
+                (color.2 as f64 * bright) as u8,
+            )
+        })
+        .collect()
+}
+
+fn render_progression(palette: &[PA], duration_secs: f64, spatial_spread: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
+    let progress = (t / duration_secs).min(1.0);
+    (0..n_seg)
+        .map(|i| {
+            let p = (progress + (i as f64 - n_seg as f64 / 2.0) * spatial_spread)
+                .clamp(0.0, 1.0);
+            palette_sample(palette, p)
+        })
+        .collect()
 }
 
 // ── Run loop ────────────────────────────────────────────────────────────────
@@ -496,13 +539,7 @@ pub fn run_theme(
             }
         }
         ThemeKind::Animated { behavior, delay } => {
-            if let Err(e) = send_brightness(&ip, brightness) {
-                crate::ui::error(&format!("Failed to set brightness: {e}"));
-            }
-            if let Err(e) = razer_activate(&ip) {
-                crate::ui::error(&format!("Failed to activate DreamView: {e}"));
-            }
-            std::thread::sleep(Duration::from_millis(100));
+            crate::dreamview::activate(&ip, brightness, true);
 
             {
                 use colored::Colorize;
@@ -522,13 +559,7 @@ pub fn run_theme(
             while RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
                 let colors = render_frame(behavior, &mut rng, &mut state, n_seg, t_acc);
 
-                let send_colors = if mirror {
-                    let mut m = colors.clone();
-                    m.extend(colors.iter().rev());
-                    m
-                } else {
-                    colors
-                };
+                let send_colors = crate::dreamview::apply_mirror(&colors, mirror);
 
                 let _ = send_segments(&ip, &send_colors, true);
                 crate::ui::status_line(&send_colors, "");
@@ -538,10 +569,7 @@ pub fn run_theme(
                 t_acc += delay_ms as f64 / 1000.0;
             }
 
-            crate::ui::status_line_finish();
-            crate::ui::deactivating();
-            let _ = razer_deactivate(&ip);
-            crate::ui::stopped();
+            crate::dreamview::shutdown(&ip, true);
         }
     }
 }

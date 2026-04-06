@@ -10,18 +10,9 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
     let ip = resolve_or_exit(ip.as_deref());
 
     let use_razer = !args.no_dreamview;
-    let n_seg = if use_razer { args.segments.max(1) } else { 1 };
+    let n_seg = crate::dreamview::segment_count(use_razer, args.segments);
 
-    if let Err(e) = send_brightness(&ip, args.brightness) {
-        crate::ui::error(&format!("Failed to set brightness: {e}"));
-    }
-
-    if use_razer {
-        if let Err(e) = razer_activate(&ip) {
-            crate::ui::error(&format!("Failed to activate DreamView: {e}"));
-        }
-        std::thread::sleep(Duration::from_millis(100));
-    }
+    crate::dreamview::activate(&ip, args.brightness, use_razer);
 
     let analyzer = match AudioAnalyzer::new() {
         Ok(a) => a,
@@ -90,13 +81,7 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
             ));
         }
 
-        let send_colors = if mirror {
-            let mut mirrored = current_colors.clone();
-            mirrored.extend(current_colors.iter().rev());
-            mirrored
-        } else {
-            current_colors.clone()
-        };
+        let send_colors = crate::dreamview::apply_mirror(&current_colors, mirror);
 
         if use_razer {
             let _ = send_segments(&ip, &send_colors, args.gradient);
@@ -120,11 +105,6 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
         }
     }
 
-    crate::ui::status_line_finish();
     drop(analyzer);
-    if use_razer {
-        crate::ui::deactivating();
-        let _ = razer_deactivate(&ip);
-    }
-    crate::ui::stopped();
+    crate::dreamview::shutdown(&ip, use_razer);
 }

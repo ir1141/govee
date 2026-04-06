@@ -24,18 +24,12 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
 
     let ip = resolve_or_exit(ip.as_deref());
     let use_razer = !args.no_dreamview;
-    let n_seg = if use_razer { args.segments.max(1) } else { 1 };
+    let n_seg = crate::dreamview::segment_count(use_razer, args.segments);
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);
 
-    if let Err(e) = send_brightness(&ip, args.brightness) {
-        crate::ui::error(&format!("Failed to set brightness: {e}"));
-    }
+    crate::dreamview::activate(&ip, args.brightness, use_razer);
 
     if use_razer {
-        if let Err(e) = razer_activate(&ip) {
-            crate::ui::error(&format!("Failed to activate DreamView: {e}"));
-        }
-        std::thread::sleep(Duration::from_millis(100));
         use colored::Colorize;
         let mode = format!(
             "DreamView ({n_seg} segments{})",
@@ -108,13 +102,7 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
         let needs_keepalive = last_send_time.elapsed() >= keepalive_interval;
         if any_changed || needs_keepalive {
             if use_razer {
-                let send_colors = if mirror {
-                    let mut mirrored = current_colors.clone();
-                    mirrored.extend(current_colors.iter().rev());
-                    mirrored
-                } else {
-                    current_colors.clone()
-                };
+                let send_colors = crate::dreamview::apply_mirror(&current_colors, mirror);
                 let _ = send_segments(&ip, &send_colors, args.gradient);
             } else {
                 let (r, g, b) = current_colors[0];
@@ -137,10 +125,5 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
         }
     }
 
-    crate::ui::status_line_finish();
-    if use_razer {
-        crate::ui::deactivating();
-        let _ = razer_deactivate(&ip);
-    }
-    crate::ui::stopped();
+    crate::dreamview::shutdown(&ip, use_razer);
 }

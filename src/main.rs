@@ -6,6 +6,7 @@ mod ambient;
 mod screen;
 mod audio_cmd;
 mod ui;
+mod dreamview;
 
 use clap::Parser;
 use govee_lan::*;
@@ -14,6 +15,31 @@ use std::time::Duration;
 
 use cli::{Cli, Command};
 use colored::Colorize;
+
+#[derive(serde::Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct DevStatus {
+    #[serde(default)]
+    on_off: i64,
+    #[serde(default)]
+    brightness: u8,
+    #[serde(default)]
+    color_tem_in_kelvin: i64,
+    #[serde(default)]
+    color: Option<StatusColor>,
+    #[serde(default)]
+    sku: Option<String>,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct StatusColor {
+    #[serde(default)]
+    r: u8,
+    #[serde(default)]
+    g: u8,
+    #[serde(default)]
+    b: u8,
+}
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(2);
 
@@ -131,35 +157,22 @@ fn main() {
             let status = send_command(&ip, "devStatus", serde_json::json!({}), cli.debug);
             match status {
                 Some(data) => {
-                    let on = data.get("onOff").and_then(|v| v.as_i64()) == Some(1);
-                    let power_str = if on {
+                    let s: DevStatus = serde_json::from_value(data).unwrap_or_default();
+                    let power_str = if s.on_off == 1 {
                         format!("{}", "ON".green())
                     } else {
                         format!("{}", "OFF".red())
                     };
                     ui::info("Power", &power_str);
+                    ui::info("Brightness", &ui::brightness_bar(s.brightness));
 
-                    let brightness = data
-                        .get("brightness")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0) as u8;
-                    ui::info("Brightness", &ui::brightness_bar(brightness));
-
-                    let temp = data
-                        .get("colorTemInKelvin")
-                        .and_then(|v| v.as_i64())
-                        .unwrap_or(0);
-                    if temp > 0 {
-                        ui::info("Temp", &format!("{}", format!("{temp}K").yellow()));
-                    } else {
-                        let color = data.get("color").cloned().unwrap_or(serde_json::json!({}));
-                        let r = color.get("r").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-                        let g = color.get("g").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-                        let b = color.get("b").and_then(|v| v.as_i64()).unwrap_or(0) as u8;
-                        ui::info("Color", &ui::color_swatch_full(r, g, b));
+                    if s.color_tem_in_kelvin > 0 {
+                        ui::info("Temp", &format!("{}", format!("{}K", s.color_tem_in_kelvin).yellow()));
+                    } else if let Some(c) = &s.color {
+                        ui::info("Color", &ui::color_swatch_full(c.r, c.g, c.b));
                     }
 
-                    ui::info("Device", &format!("{} {}", ip.cyan(), data.get("sku").and_then(|v| v.as_str()).unwrap_or("").dimmed()));
+                    ui::info("Device", &format!("{} {}", ip.cyan(), s.sku.as_deref().unwrap_or("").dimmed()));
                 }
                 None => {
                     ui::error_hint(

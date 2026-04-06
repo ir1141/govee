@@ -3,6 +3,14 @@ use govee_lan::audio::{Palette, VisMode};
 
 use crate::themes;
 
+fn parse_segments_127(s: &str) -> Result<usize, String> {
+    let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
+    if !(1..=127).contains(&v) {
+        return Err(format!("segments must be 1-127, got {v}"));
+    }
+    Ok(v)
+}
+
 #[derive(Parser)]
 #[command(name = "govee", about = "Control Govee LED strip lights over LAN")]
 #[command(after_help = format!("Themes:\n{}", themes::theme_list_display()))]
@@ -118,11 +126,7 @@ pub struct ScreenArgs {
     #[arg(
         long,
         default_value_t = 5,
-        value_parser = |s: &str| -> Result<usize, String> {
-            let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
-            if v < 1 || v > 127 { return Err(format!("segments must be 1-127, got {v}")); }
-            Ok(v)
-        },
+        value_parser = parse_segments_127,
         help = "Number of color zones across top edge (max 127 for mirror support)"
     )]
     pub segments: usize,
@@ -158,11 +162,7 @@ pub struct AudioArgs {
     #[arg(long, default_value_t = 80, help = "Strip brightness 1-100")]
     pub brightness: u8,
 
-    #[arg(long, default_value_t = 5, value_parser = |s: &str| -> Result<usize, String> {
-        let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
-        if v < 1 || v > 127 { return Err(format!("segments must be 1-127, got {v}")); }
-        Ok(v)
-    }, help = "Number of DreamView segments (max 127 for mirror support)")]
+    #[arg(long, default_value_t = 5, value_parser = parse_segments_127, help = "Number of DreamView segments (max 127 for mirror support)")]
     pub segments: usize,
 
     #[arg(long, default_value_t = 0.3, help = "Color transition speed 0.0-1.0")]
