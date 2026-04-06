@@ -29,6 +29,7 @@ pub enum Message {
     ApplyTheme(String),
     StopMode,
     ThemeFilterChanged(String),
+    Tick,
 
     // Screen settings
     SetScreenFps(u32),
@@ -64,6 +65,8 @@ pub struct App {
     pub subprocess: Option<std::process::Child>,
     pub theme_filter: String,
     pub active_mode: Option<String>,
+    pub elapsed_secs: u64,
+    pub subprocess_start: Option<std::time::Instant>,
 }
 
 impl App {
@@ -97,6 +100,8 @@ impl App {
             subprocess: None,
             theme_filter: "all".into(),
             active_mode: None,
+            elapsed_secs: 0,
+            subprocess_start: None,
         };
         let init_task = Task::perform(
             async { govee_lan::scan_devices(Duration::from_secs(2)) },
@@ -106,7 +111,13 @@ impl App {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        iced::time::every(Duration::from_secs(10)).map(|_| Message::DiscoveryTick)
+        let mut subs = vec![
+            iced::time::every(Duration::from_secs(10)).map(|_| Message::DiscoveryTick),
+        ];
+        if self.subprocess.is_some() {
+            subs.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
+        }
+        iced::Subscription::batch(subs)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -233,6 +244,8 @@ impl App {
                                 Ok(child) => {
                                     self.subprocess = Some(child);
                                     self.active_theme = Some(name);
+                                    self.subprocess_start = Some(std::time::Instant::now());
+                                    self.elapsed_secs = 0;
                                 }
                                 Err(_) => {}
                             }
@@ -247,9 +260,16 @@ impl App {
                 self.subprocess = None;
                 self.active_theme = None;
                 self.active_mode = None;
+                self.subprocess_start = None;
+                self.elapsed_secs = 0;
             }
             Message::ThemeFilterChanged(filter) => {
                 self.theme_filter = filter;
+            }
+            Message::Tick => {
+                if let Some(start) = self.subprocess_start {
+                    self.elapsed_secs = start.elapsed().as_secs();
+                }
             }
             Message::SetScreenFps(v) => { self.config.screen.fps = v; self.config.save(); }
             Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; self.config.save(); }
@@ -282,6 +302,8 @@ impl App {
                         Ok(child) => {
                             self.subprocess = Some(child);
                             self.active_mode = Some("screen".into());
+                            self.subprocess_start = Some(std::time::Instant::now());
+                            self.elapsed_secs = 0;
                         }
                         Err(_) => {}
                     }
@@ -308,6 +330,8 @@ impl App {
                         Ok(child) => {
                             self.subprocess = Some(child);
                             self.active_mode = Some("audio".into());
+                            self.subprocess_start = Some(std::time::Instant::now());
+                            self.elapsed_secs = 0;
                         }
                         Err(_) => {}
                     }
@@ -332,6 +356,8 @@ impl App {
                         Ok(child) => {
                             self.subprocess = Some(child);
                             self.active_mode = Some("ambient".into());
+                            self.subprocess_start = Some(std::time::Instant::now());
+                            self.elapsed_secs = 0;
                         }
                         Err(_) => {}
                     }
@@ -348,7 +374,12 @@ impl App {
             .map(|d| format!("{} • {}", d.sku, d.ip))
             .unwrap_or_else(|| "No device".into());
 
-        let sidebar = sidebar::view(self.page, &device_label);
+        let sidebar = sidebar::view(
+            self.page,
+            &device_label,
+            &self.devices,
+            self.device.as_ref().map(|d| d.ip.as_str()),
+        );
 
         let page_content: Element<Message> = match self.page {
             Page::Controls => pages::controls::view(self),
@@ -363,15 +394,39 @@ impl App {
             .height(Length::Fill)
             .padding(20);
 
-        let mode_label = "Idle";
+        let mode_label = if let Some(ref mode) = self.active_mode {
+            match mode.as_str() {
+                "screen" => format!("Screen Capture · {}s", self.elapsed_secs),
+                "audio" => format!("Audio Reactive · {}s", self.elapsed_secs),
+                "ambient" => format!("Ambient Sync · {}s", self.elapsed_secs),
+                _ => format!("Mode: {mode}"),
+            }
+        } else if let Some(ref theme) = self.active_theme {
+            if self.subprocess.is_some() {
+                format!("Theme: {} · {}s", theme, self.elapsed_secs)
+            } else {
+                format!("Theme: {theme}")
+            }
+        } else {
+            "Idle".to_string()
+        };
         let main = column![
             row![sidebar, content].height(Length::Fill),
-            status_bar::view(self.device.is_some(), mode_label),
+            status_bar::view(self.device.is_some(), &mode_label),
         ];
 
         container(main)
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        if let Some(ref mut child) = self.subprocess {
+            crate::subprocess::kill(child);
+            let _ = child.wait();
+        }
     }
 }
