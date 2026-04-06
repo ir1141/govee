@@ -29,6 +29,25 @@ pub enum Message {
     ApplyTheme(String),
     StopMode,
     ThemeFilterChanged(String),
+
+    // Screen settings
+    SetScreenFps(u32),
+    SetScreenBrightness(u8),
+    SetScreenSegments(usize),
+    ToggleScreenMirror(bool),
+    StartScreen,
+
+    // Audio settings
+    SetAudioMode(String),
+    SetAudioBrightness(u8),
+    SetAudioSegments(usize),
+    ToggleAudioMirror(bool),
+    StartAudio,
+
+    // Ambient settings
+    SetAmbientBrightness(u8),
+    ToggleAmbientDim(bool),
+    StartAmbient,
 }
 
 pub struct App {
@@ -44,6 +63,7 @@ pub struct App {
     pub active_theme: Option<String>,
     pub subprocess: Option<std::process::Child>,
     pub theme_filter: String,
+    pub active_mode: Option<String>,
 }
 
 impl App {
@@ -76,6 +96,7 @@ impl App {
             active_theme: None,
             subprocess: None,
             theme_filter: "all".into(),
+            active_mode: None,
         };
         let init_task = Task::perform(
             async { govee_lan::scan_devices(Duration::from_secs(2)) },
@@ -225,9 +246,96 @@ impl App {
                 }
                 self.subprocess = None;
                 self.active_theme = None;
+                self.active_mode = None;
             }
             Message::ThemeFilterChanged(filter) => {
                 self.theme_filter = filter;
+            }
+            Message::SetScreenFps(v) => { self.config.screen.fps = v; self.config.save(); }
+            Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; self.config.save(); }
+            Message::SetScreenSegments(v) => { self.config.screen.segments = v; self.config.save(); }
+            Message::ToggleScreenMirror(v) => { self.config.screen.mirror = v; self.config.save(); }
+            Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); }
+            Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; self.config.save(); }
+            Message::SetAudioSegments(v) => { self.config.audio.segments = v; self.config.save(); }
+            Message::ToggleAudioMirror(v) => { self.config.audio.mirror = v; self.config.save(); }
+            Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; self.config.save(); }
+            Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); }
+            Message::StartScreen => {
+                if let Some(ref mut child) = self.subprocess {
+                    crate::subprocess::kill(child);
+                }
+                self.subprocess = None;
+                self.active_theme = None;
+                if let Some(ref dev) = self.device {
+                    let s = &self.config.screen;
+                    let mut args: Vec<String> = vec![
+                        "screen".into(),
+                        "--fps".into(), s.fps.to_string(),
+                        "--brightness".into(), s.brightness.to_string(),
+                        "--segments".into(), s.segments.to_string(),
+                    ];
+                    if s.mirror { args.push("--mirror".into()); }
+                    let ip = dev.ip.clone();
+                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                    match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
+                        Ok(child) => {
+                            self.subprocess = Some(child);
+                            self.active_mode = Some("screen".into());
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+            Message::StartAudio => {
+                if let Some(ref mut child) = self.subprocess {
+                    crate::subprocess::kill(child);
+                }
+                self.subprocess = None;
+                self.active_theme = None;
+                if let Some(ref dev) = self.device {
+                    let a = &self.config.audio;
+                    let mut args: Vec<String> = vec![
+                        "audio".into(),
+                        "--mode".into(), a.mode.clone(),
+                        "--brightness".into(), a.brightness.to_string(),
+                        "--segments".into(), a.segments.to_string(),
+                    ];
+                    if a.mirror { args.push("--mirror".into()); }
+                    let ip = dev.ip.clone();
+                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                    match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
+                        Ok(child) => {
+                            self.subprocess = Some(child);
+                            self.active_mode = Some("audio".into());
+                        }
+                        Err(_) => {}
+                    }
+                }
+            }
+            Message::StartAmbient => {
+                if let Some(ref mut child) = self.subprocess {
+                    crate::subprocess::kill(child);
+                }
+                self.subprocess = None;
+                self.active_theme = None;
+                if let Some(ref dev) = self.device {
+                    let amb = &self.config.ambient;
+                    let mut args: Vec<String> = vec![
+                        "ambient".into(),
+                        "--brightness".into(), amb.brightness.to_string(),
+                    ];
+                    if amb.dim { args.push("--dim".into()); }
+                    let ip = dev.ip.clone();
+                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                    match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
+                        Ok(child) => {
+                            self.subprocess = Some(child);
+                            self.active_mode = Some("ambient".into());
+                        }
+                        Err(_) => {}
+                    }
+                }
             }
         }
         Task::none()
@@ -245,9 +353,9 @@ impl App {
         let page_content: Element<Message> = match self.page {
             Page::Controls => pages::controls::view(self),
             Page::Themes => pages::themes::view(self),
-            Page::Screen => pages::screen::view(),
-            Page::Audio => pages::audio::view(),
-            Page::Ambient => pages::ambient::view(),
+            Page::Screen => pages::screen::view(self),
+            Page::Audio => pages::audio::view(self),
+            Page::Ambient => pages::ambient::view(self),
         };
 
         let content = container(page_content)
