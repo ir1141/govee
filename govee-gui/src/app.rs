@@ -17,6 +17,11 @@ pub enum Page {
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Page),
+    TogglePower,
+    SetBrightness(u8),
+    SetColor(u8, u8, u8),
+    SetColorTemp(u16),
+    DeviceCommandResult(Result<(), String>),
 }
 
 pub struct App {
@@ -24,6 +29,10 @@ pub struct App {
     pub device: Option<DeviceInfo>,
     pub devices: Vec<DeviceInfo>,
     pub config: GuiConfig,
+    pub power: bool,
+    pub brightness: u8,
+    pub color: (u8, u8, u8),
+    pub color_temp: u16,
 }
 
 impl App {
@@ -36,12 +45,23 @@ impl App {
             "ambient" => Page::Ambient,
             _ => Page::Controls,
         };
+        let brightness = config.controls.brightness;
+        let color = (
+            config.controls.color[0],
+            config.controls.color[1],
+            config.controls.color[2],
+        );
+        let color_temp = config.controls.color_temp;
         (
             Self {
                 page,
                 device: None,
                 devices: vec![],
                 config,
+                power: true,
+                brightness,
+                color,
+                color_temp,
             },
             Task::none(),
         )
@@ -61,6 +81,62 @@ impl App {
                 .into();
                 self.config.save();
             }
+            Message::TogglePower => {
+                self.power = !self.power;
+                if let Some(ref dev) = self.device {
+                    let ip = dev.ip.clone();
+                    let on = self.power;
+                    return Task::perform(
+                        async move {
+                            govee_lan::send_turn(&ip, on).map_err(|e| e.to_string())
+                        },
+                        Message::DeviceCommandResult,
+                    );
+                }
+            }
+            Message::SetBrightness(value) => {
+                self.brightness = value;
+                self.config.controls.brightness = value;
+                self.config.save();
+                if let Some(ref dev) = self.device {
+                    let ip = dev.ip.clone();
+                    return Task::perform(
+                        async move {
+                            govee_lan::send_brightness(&ip, value).map_err(|e| e.to_string())
+                        },
+                        Message::DeviceCommandResult,
+                    );
+                }
+            }
+            Message::SetColor(r, g, b) => {
+                self.color = (r, g, b);
+                self.config.controls.color = [r, g, b];
+                self.config.save();
+                if let Some(ref dev) = self.device {
+                    let ip = dev.ip.clone();
+                    return Task::perform(
+                        async move {
+                            govee_lan::send_color(&ip, r, g, b).map_err(|e| e.to_string())
+                        },
+                        Message::DeviceCommandResult,
+                    );
+                }
+            }
+            Message::SetColorTemp(kelvin) => {
+                self.color_temp = kelvin;
+                self.config.controls.color_temp = kelvin;
+                self.config.save();
+                if let Some(ref dev) = self.device {
+                    let ip = dev.ip.clone();
+                    return Task::perform(
+                        async move {
+                            govee_lan::send_color_temp(&ip, kelvin).map_err(|e| e.to_string())
+                        },
+                        Message::DeviceCommandResult,
+                    );
+                }
+            }
+            Message::DeviceCommandResult(_) => {}
         }
         Task::none()
     }
@@ -75,7 +151,7 @@ impl App {
         let sidebar = sidebar::view(self.page, &device_label);
 
         let page_content: Element<Message> = match self.page {
-            Page::Controls => pages::controls::view(),
+            Page::Controls => pages::controls::view(self),
             Page::Themes => pages::themes::view(),
             Page::Screen => pages::screen::view(),
             Page::Audio => pages::audio::view(),
