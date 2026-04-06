@@ -5,7 +5,7 @@ use govee_lan::ThemeKind;
 use crate::app::{App, Message};
 use crate::style;
 
-const CATEGORIES: &[&str] = &["all", "static", "nature", "vibes", "functional", "seasonal"];
+const CATEGORIES: &[&str] = &["all", "static", "nature", "vibes", "functional", "seasonal", "custom"];
 const CARD_WIDTH: f32 = 140.0;
 const COLOR_BAND_HEIGHT: f32 = 32.0;
 const CARDS_PER_ROW: usize = 4;
@@ -85,18 +85,34 @@ pub fn view(app: &App) -> Element<'_, Message> {
     }
 
     // ── Determine which categories to show ─────────────────────────────────
-    let display_cats: Vec<&str> = if app.theme_filter == "all" {
-        CATEGORIES.iter().skip(1).copied().collect()
+    let is_custom = |c: &str| !govee_lan::BUILTIN_CATEGORIES.contains(&c);
+
+    let display_cats: Vec<String> = if app.theme_filter == "all" {
+        let mut cats: Vec<String> = govee_lan::BUILTIN_CATEGORIES.iter().map(|s: &&str| s.to_string()).collect();
+        for t in &app.themes {
+            if is_custom(&t.category) && !cats.iter().any(|c| c == &t.category) {
+                cats.push(t.category.clone());
+            }
+        }
+        cats
+    } else if app.theme_filter == "custom" {
+        let mut cats: Vec<String> = Vec::new();
+        for t in &app.themes {
+            if is_custom(&t.category) && !cats.iter().any(|c| c == &t.category) {
+                cats.push(t.category.clone());
+            }
+        }
+        cats
     } else {
-        vec![app.theme_filter.as_str()]
+        vec![app.theme_filter.clone()]
     };
 
     // ── Build card grid per category ────────────────────────────────────────
-    for cat in display_cats {
+    for cat in display_cats.iter() {
         let cat_themes: Vec<&govee_lan::ThemeDef> = app
             .themes
             .iter()
-            .filter(|t| t.category == cat)
+            .filter(|t| t.category == cat.as_str())
             .collect();
 
         if cat_themes.is_empty() {

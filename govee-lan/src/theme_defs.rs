@@ -1,5 +1,7 @@
 use crate::themes::{pa, wp, Behavior, Delay, ThemeDef, ThemeKind};
 
+pub const BUILTIN_CATEGORIES: &[&str] = &["static", "nature", "vibes", "functional", "seasonal"];
+
 pub fn builtin_themes() -> Vec<ThemeDef> {
     vec![
     // ── Static ──────────────────────────────────────────────────────────

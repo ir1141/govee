@@ -16,5 +16,5 @@ pub use protocol::{
 pub use colors::{hex_to_rgb, color_distance, smooth, saturate_color};
 pub use discovery::{DeviceInfo, scan_devices, discover_device, resolve_ip};
 pub use themes::{ThemeDef, ThemeKind, Behavior, Delay, PA, WaveParam, Rgb};
-pub use theme_defs::builtin_themes;
+pub use theme_defs::{builtin_themes, BUILTIN_CATEGORIES};
 pub use theme_loader::load_all_themes;
