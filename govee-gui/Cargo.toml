@@ -1,0 +1,18 @@
+[package]
+name = "govee-gui"
+version = "0.1.0"
+edition = "2021"
+description = "GUI for controlling Govee LED strip lights over LAN"
+license = "MIT"
+
+[[bin]]
+name = "govee-gui"
+path = "src/main.rs"
+
+[dependencies]
+govee-lan = { path = "../govee-lan" }
+iced = { version = "0.13", features = ["tokio"] }
+tokio = { version = "1", features = ["process", "time"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "6"
