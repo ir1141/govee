@@ -1,5 +1,5 @@
 use iced::widget::{container, row, text, toggler};
-use iced::{Background, Border, Color, Element, Length};
+use iced::{Color, Element, Length};
 use crate::app::Message;
 use crate::style;
 
@@ -7,12 +7,12 @@ pub fn view(connected: bool, mode_label: &str, mirror: bool) -> Element<'static,
     let mode_label: String = mode_label.to_string();
 
     let status_text = if connected {
-        text("● Connected").color(style::SUCCESS)
+        text("● Connected").size(13).color(style::SUCCESS)
     } else {
-        text("● Disconnected").color(Color::from_rgb(1.0, 0.3, 0.3))
+        text("● Disconnected").size(13).color(Color::from_rgb(1.0, 0.3, 0.3))
     };
 
-    let mode_text = text(format!("Mode: {}", mode_label)).color(style::TEXT_SECONDARY);
+    let mode_text = text(format!("Mode: {}", mode_label)).size(13).color(style::TEXT_SECONDARY);
 
     let mirror_toggle = row![
         text("Mirror").size(13).color(style::TEXT_MUTED),
@@ -28,19 +28,11 @@ pub fn view(connected: bool, mode_label: &str, mirror: bool) -> Element<'static,
         mirror_toggle,
     ]
     .spacing(16.0)
-    .padding(8.0)
+    .padding([10, 16])
     .align_y(iced::Alignment::Center);
 
     container(bar)
         .width(Length::Fill)
-        .style(|_theme| container::Style {
-            background: Some(Background::Color(style::SIDEBAR_BG)),
-            border: Border {
-                radius: 0.0.into(),
-                color: style::SURFACE,
-                width: 1.0,
-            },
-            ..Default::default()
-        })
+        .style(style::status_bar_style)
         .into()
 }

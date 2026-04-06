@@ -35,14 +35,12 @@ pub enum Message {
     SetScreenFps(u32),
     SetScreenBrightness(u8),
     SetScreenSegments(usize),
-    ToggleScreenMirror(bool),
     StartScreen,
 
     // Audio settings
     SetAudioMode(String),
     SetAudioBrightness(u8),
     SetAudioSegments(usize),
-    ToggleAudioMirror(bool),
     StartAudio,
 
     // Ambient settings
@@ -281,11 +279,9 @@ impl App {
             Message::SetScreenFps(v) => { self.config.screen.fps = v; self.config.save(); }
             Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; self.config.save(); }
             Message::SetScreenSegments(v) => { self.config.screen.segments = v; self.config.save(); }
-            Message::ToggleScreenMirror(v) => { self.config.screen.mirror = v; self.config.save(); }
             Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); }
             Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; self.config.save(); }
             Message::SetAudioSegments(v) => { self.config.audio.segments = v; self.config.save(); }
-            Message::ToggleAudioMirror(v) => { self.config.audio.mirror = v; self.config.save(); }
             Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; self.config.save(); }
             Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); }
             Message::ToggleMirror(v) => {
@@ -405,7 +401,7 @@ impl App {
         let content = container(page_content)
             .width(Length::Fill)
             .height(Length::Fill)
-            .padding(20);
+            .padding(24);
 
         let mode_label = if let Some(ref mode) = self.active_mode {
             match mode.as_str() {

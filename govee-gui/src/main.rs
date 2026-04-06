@@ -9,6 +9,7 @@ use iced::{Size, Theme};
 
 fn main() -> iced::Result {
     iced::application("Govee", app::App::update, app::App::view)
+        .font(include_bytes!("../fonts/Inter.ttf"))
         .theme(|_| {
             Theme::custom(
                 "Govee Dark".into(),
@@ -17,11 +18,11 @@ fn main() -> iced::Result {
                     text: style::TEXT_PRIMARY,
                     primary: style::ACCENT,
                     success: style::SUCCESS,
-                    danger: iced::Color::from_rgb(1.0, 0.3, 0.3),
+                    danger: style::DANGER,
                 },
             )
         })
-        .window_size(Size::new(900.0, 600.0))
+        .window_size(Size::new(900.0, 620.0))
         .subscription(app::App::subscription)
         .run_with(app::App::new)
 }

@@ -1,5 +1,5 @@
-use iced::widget::{button, column, horizontal_space, row, slider, text, toggler};
-use iced::{Alignment, Border, Color, Element, Length};
+use iced::widget::{button, column, container, horizontal_space, row, slider, text};
+use iced::{Alignment, Color, Element, Length};
 use crate::app::{App, Message};
 use crate::style;
 
@@ -10,144 +10,85 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let start_stop_btn = if is_active {
         button(text("■ Stop Audio Visualizer").size(13).color(Color::WHITE))
-            .padding([6, 16])
+            .padding([8, 20])
             .on_press(Message::StopMode)
-            .style(|_theme, status| button::Style {
-                background: Some(iced::Background::Color(match status {
-                    button::Status::Hovered => Color::from_rgb(0.8, 0.2, 0.2),
-                    _ => Color::from_rgb(0.6, 0.15, 0.15),
-                })),
-                text_color: Color::WHITE,
-                border: Border { radius: style::RADIUS.into(), ..Default::default() },
-                ..Default::default()
-            })
+            .style(style::danger_action_button())
     } else {
         button(text("▶ Start Audio Visualizer").size(13).color(Color::WHITE))
-            .padding([6, 16])
+            .padding([8, 20])
             .on_press(Message::StartAudio)
-            .style(|_theme, status| button::Style {
-                background: Some(iced::Background::Color(match status {
-                    button::Status::Hovered => Color::from_rgb(
-                        style::ACCENT.r + 0.1,
-                        style::ACCENT.g + 0.1,
-                        style::ACCENT.b + 0.1,
-                    ),
-                    _ => style::ACCENT,
-                })),
-                text_color: Color::WHITE,
-                border: Border { radius: style::RADIUS.into(), ..Default::default() },
-                ..Default::default()
-            })
+            .style(style::accent_action_button())
     };
 
     let header = row![
-        text("Audio Visualizer").size(22).color(style::TEXT_PRIMARY),
+        text("Audio Visualizer").size(24).color(style::TEXT_PRIMARY),
         horizontal_space(),
         start_stop_btn,
     ]
     .align_y(Alignment::Center)
     .spacing(style::SPACING);
 
-    // Mode picker
-    let mode_label = text("Mode").size(14).color(style::TEXT_PRIMARY);
-    let mut mode_row = row![].spacing(4);
+    // Mode card
+    let mut mode_row = row![].spacing(6);
     for &mode in AUDIO_MODES {
         let is_mode_active = app.config.audio.mode == mode;
         let btn = button(text(mode).size(12))
-            .padding([4, 10])
+            .padding([6, 14])
             .on_press(Message::SetAudioMode(mode.to_string()))
-            .style(move |_theme, status| {
-                let base = button::Style {
-                    background: Some(iced::Background::Color(if is_mode_active {
-                        style::ACCENT
-                    } else {
-                        style::SURFACE
-                    })),
-                    text_color: if is_mode_active {
-                        Color::WHITE
-                    } else {
-                        style::TEXT_SECONDARY
-                    },
-                    border: Border {
-                        radius: style::RADIUS.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-                match status {
-                    button::Status::Hovered => button::Style {
-                        background: Some(iced::Background::Color(if is_mode_active {
-                            style::ACCENT
-                        } else {
-                            Color {
-                                r: style::SURFACE.r + 0.05,
-                                g: style::SURFACE.g + 0.05,
-                                b: style::SURFACE.b + 0.05,
-                                a: 1.0,
-                            }
-                        })),
-                        ..base
-                    },
-                    _ => base,
-                }
-            });
+            .style(style::pill_button(is_mode_active));
         mode_row = mode_row.push(btn);
     }
 
-    // Brightness
-    let brightness_row = row![
-        text("Brightness").size(14).color(style::TEXT_PRIMARY),
-        horizontal_space(),
-        text(format!("{}%", app.config.audio.brightness)).size(14).color(style::TEXT_SECONDARY),
-    ]
-    .align_y(Alignment::Center);
-
-    let brightness_slider = slider(
-        1u8..=100u8,
-        app.config.audio.brightness,
-        Message::SetAudioBrightness,
+    let mode_card = container(
+        column![
+            text("Mode").size(14).color(style::TEXT_PRIMARY),
+            mode_row,
+        ]
+        .spacing(10),
     )
-    .width(Length::Fill);
+    .padding([16, 18])
+    .style(style::card_style);
 
-    // Segments
-    let segments_row = row![
-        text("Segments").size(14).color(style::TEXT_PRIMARY),
-        horizontal_space(),
-        text(format!("{}", app.config.audio.segments)).size(14).color(style::TEXT_SECONDARY),
-    ]
-    .align_y(Alignment::Center);
-
-    let segments_slider = slider(
-        1u8..=15u8,
-        app.config.audio.segments as u8,
-        |v| Message::SetAudioSegments(v as usize),
+    // Brightness card
+    let brightness_card = container(
+        column![
+            row![
+                text("Brightness").size(14).color(style::TEXT_PRIMARY),
+                horizontal_space(),
+                text(format!("{}%", app.config.audio.brightness)).size(14).color(style::TEXT_SECONDARY),
+            ]
+            .align_y(Alignment::Center),
+            slider(1u8..=100u8, app.config.audio.brightness, Message::SetAudioBrightness)
+                .width(Length::Fill),
+        ]
+        .spacing(10),
     )
-    .width(Length::Fill);
+    .padding([16, 18])
+    .style(style::card_style);
 
-    // Mirror toggle
-    let mirror_row = row![
-        text("Mirror").size(14).color(style::TEXT_PRIMARY),
-        horizontal_space(),
-        toggler(app.config.audio.mirror)
-            .on_toggle(Message::ToggleAudioMirror),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(10);
+    // Segments card
+    let segments_card = container(
+        column![
+            row![
+                text("Segments").size(14).color(style::TEXT_PRIMARY),
+                horizontal_space(),
+                text(format!("{}", app.config.audio.segments)).size(14).color(style::TEXT_SECONDARY),
+            ]
+            .align_y(Alignment::Center),
+            slider(1u8..=15u8, app.config.audio.segments as u8, |v| Message::SetAudioSegments(v as usize))
+                .width(Length::Fill),
+        ]
+        .spacing(10),
+    )
+    .padding([16, 18])
+    .style(style::card_style);
 
     column![
         header,
-        iced::widget::rule::Rule::horizontal(1),
-        mode_label,
-        mode_row,
-        iced::widget::rule::Rule::horizontal(1),
-        brightness_row,
-        brightness_slider,
-        iced::widget::rule::Rule::horizontal(1),
-        segments_row,
-        segments_slider,
-        iced::widget::rule::Rule::horizontal(1),
-        mirror_row,
+        mode_card,
+        brightness_card,
+        segments_card,
     ]
-    .spacing(12)
+    .spacing(14)
     .into()
 }

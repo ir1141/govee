@@ -1,6 +1,7 @@
 use iced::widget::{button, column, container, horizontal_space, row, slider, text, toggler};
 use iced::{Alignment, Color, Element, Length};
 use crate::app::{App, Message};
+use crate::style;
 
 const PRESET_COLORS: [(u8, u8, u8); 8] = [
     (255, 68, 68),   // red
@@ -18,52 +19,54 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     // Power row
     let power_row = row![
-        text("Controls").size(22),
+        text("Controls").size(24).color(style::TEXT_PRIMARY),
         horizontal_space(),
-        text("Power").size(14),
+        text("Power").size(14).color(style::TEXT_SECONDARY),
         toggler(app.power)
             .on_toggle(|_| Message::TogglePower),
     ]
     .spacing(10)
     .align_y(Alignment::Center);
 
-    // Brightness section
-    let brightness_row = row![
-        text("Brightness").size(14),
-        horizontal_space(),
-        text(format!("{}%", app.brightness)).size(14),
-    ]
-    .align_y(Alignment::Center);
-
-    let brightness_slider = slider(
-        1u8..=100u8,
-        app.brightness,
-        Message::SetBrightness,
+    // Brightness card
+    let brightness_card = container(
+        column![
+            row![
+                text("Brightness").size(14).color(style::TEXT_PRIMARY),
+                horizontal_space(),
+                text(format!("{}%", app.brightness)).size(14).color(style::TEXT_SECONDARY),
+            ]
+            .align_y(Alignment::Center),
+            slider(1u8..=100u8, app.brightness, Message::SetBrightness)
+                .width(Length::Fill),
+        ]
+        .spacing(10),
     )
-    .width(Length::Fill);
+    .padding([16, 18])
+    .style(style::card_style);
 
-    // Color section
+    // Color card
     let color_swatch = container(text(""))
-        .width(40)
-        .height(40)
+        .width(48)
+        .height(48)
         .style(move |_theme| iced::widget::container::Style {
             background: Some(iced::Background::Color(Color::from_rgb8(r, g, b))),
             border: iced::Border {
-                radius: 6.0.into(),
+                radius: style::RADIUS.into(),
                 ..Default::default()
             },
             ..Default::default()
         });
 
-    let mut preset_buttons = row![].spacing(6).align_y(Alignment::Center);
+    let mut preset_buttons = row![].spacing(8).align_y(Alignment::Center);
     for (pr, pg, pb) in PRESET_COLORS {
         let swatch = container(text(""))
-            .width(28)
-            .height(28)
+            .width(32)
+            .height(32)
             .style(move |_theme| iced::widget::container::Style {
                 background: Some(iced::Background::Color(Color::from_rgb8(pr, pg, pb))),
                 border: iced::Border {
-                    radius: 4.0.into(),
+                    radius: style::RADIUS_SM.into(),
                     ..Default::default()
                 },
                 ..Default::default()
@@ -74,48 +77,50 @@ pub fn view(app: &App) -> Element<'_, Message> {
         preset_buttons = preset_buttons.push(btn);
     }
 
-    let color_row = row![
-        text("Color").size(14),
-        horizontal_space(),
-        color_swatch,
-    ]
-    .spacing(10)
-    .align_y(Alignment::Center);
-
-    // Color temperature section
-    let temp_row = row![
-        text("Color Temperature").size(14),
-        horizontal_space(),
-        text(format!("{}K", app.color_temp)).size(14),
-    ]
-    .align_y(Alignment::Center);
-
-    let temp_slider = slider(
-        2000u16..=9000u16,
-        app.color_temp,
-        Message::SetColorTemp,
+    let color_card = container(
+        column![
+            row![
+                text("Color").size(14).color(style::TEXT_PRIMARY),
+                horizontal_space(),
+                color_swatch,
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+            preset_buttons,
+        ]
+        .spacing(12),
     )
-    .width(Length::Fill);
+    .padding([16, 18])
+    .style(style::card_style);
 
-    let temp_labels = row![
-        text("2000K").size(11),
-        horizontal_space(),
-        text("9000K").size(11),
-    ];
+    // Temperature card
+    let temp_card = container(
+        column![
+            row![
+                text("Color Temperature").size(14).color(style::TEXT_PRIMARY),
+                horizontal_space(),
+                text(format!("{}K", app.color_temp)).size(14).color(style::TEXT_SECONDARY),
+            ]
+            .align_y(Alignment::Center),
+            slider(2000u16..=9000u16, app.color_temp, Message::SetColorTemp)
+                .width(Length::Fill),
+            row![
+                text("2000K").size(11).color(style::TEXT_MUTED),
+                horizontal_space(),
+                text("9000K").size(11).color(style::TEXT_MUTED),
+            ],
+        ]
+        .spacing(10),
+    )
+    .padding([16, 18])
+    .style(style::card_style);
 
     column![
         power_row,
-        iced::widget::rule::Rule::horizontal(1),
-        brightness_row,
-        brightness_slider,
-        iced::widget::rule::Rule::horizontal(1),
-        color_row,
-        preset_buttons,
-        iced::widget::rule::Rule::horizontal(1),
-        temp_row,
-        temp_slider,
-        temp_labels,
+        brightness_card,
+        color_card,
+        temp_card,
     ]
-    .spacing(12)
+    .spacing(14)
     .into()
 }

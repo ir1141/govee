@@ -1,88 +1,47 @@
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
-use iced::{Border, Color, Element, Length};
+use iced::{Border, Color, Element, Length, Shadow, Vector};
 use iced::widget::Row;
 use govee_lan::ThemeKind;
 use crate::app::{App, Message};
 use crate::style;
 
 const CATEGORIES: &[&str] = &["all", "static", "nature", "vibes", "functional", "seasonal", "custom"];
-const CARD_WIDTH: f32 = 140.0;
-const COLOR_BAND_HEIGHT: f32 = 32.0;
+const CARD_WIDTH: f32 = 150.0;
+const COLOR_BAND_HEIGHT: f32 = 36.0;
 const CARDS_PER_ROW: usize = 4;
 
 pub fn view(app: &App) -> Element<'_, Message> {
     // ── Header row ─────────────────────────────────────────────────────────
-    let title = text("Themes").size(22).color(style::TEXT_PRIMARY);
-
-    let mut tab_row = row![].spacing(4);
+    let mut tab_row = row![].spacing(6);
     for &cat in CATEGORIES {
         let is_active = app.theme_filter == cat;
         let btn = button(text(cat).size(12))
-            .padding([4, 10])
+            .padding([6, 14])
             .on_press(Message::ThemeFilterChanged(cat.to_string()))
-            .style(move |_theme, status| {
-                let base = button::Style {
-                    background: Some(iced::Background::Color(if is_active {
-                        style::ACCENT
-                    } else {
-                        style::SURFACE
-                    })),
-                    text_color: if is_active {
-                        Color::WHITE
-                    } else {
-                        style::TEXT_SECONDARY
-                    },
-                    border: Border {
-                        radius: style::RADIUS.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                };
-                match status {
-                    button::Status::Hovered => button::Style {
-                        background: Some(iced::Background::Color(if is_active {
-                            style::ACCENT
-                        } else {
-                            Color {
-                                r: style::SURFACE.r + 0.05,
-                                g: style::SURFACE.g + 0.05,
-                                b: style::SURFACE.b + 0.05,
-                                a: 1.0,
-                            }
-                        })),
-                        ..base
-                    },
-                    _ => base,
-                }
-            });
+            .style(style::pill_button(is_active));
         tab_row = tab_row.push(btn);
     }
 
-    let header = row![title, horizontal_space(), tab_row]
-        .align_y(iced::Alignment::Center)
-        .spacing(style::SPACING);
+    let header = row![
+        text("Themes").size(24).color(style::TEXT_PRIMARY),
+        horizontal_space(),
+        tab_row,
+    ]
+    .align_y(iced::Alignment::Center)
+    .spacing(style::SPACING);
 
     // ── Stop button (shown when a theme is active) ─────────────────────────
-    let mut content_col = column![header].spacing(16);
+    let mut header_col = column![header].spacing(10);
 
     if app.active_theme.is_some() {
         let stop_btn = button(text("■ Stop").size(12).color(Color::WHITE))
-            .padding([4, 12])
+            .padding([6, 14])
             .on_press(Message::StopMode)
-            .style(|_theme, status| button::Style {
-                background: Some(iced::Background::Color(match status {
-                    button::Status::Hovered => Color::from_rgb(0.8, 0.2, 0.2),
-                    _ => Color::from_rgb(0.6, 0.15, 0.15),
-                })),
-                text_color: Color::WHITE,
-                border: Border {
-                    radius: style::RADIUS.into(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            });
-        content_col = content_col.push(stop_btn);
+            .style(style::danger_action_button());
+        header_col = header_col.push(stop_btn);
     }
+
+    let mut content_col = column![].spacing(16);
 
     // ── Determine which categories to show ─────────────────────────────────
     let is_custom = |c: &str| !govee_lan::BUILTIN_CATEGORIES.contains(&c);
@@ -120,7 +79,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
 
         let cat_label = text(cat.to_uppercase())
-            .size(11)
+            .size(12)
             .color(style::TEXT_MUTED);
 
         let mut grid = column![].spacing(8);
@@ -141,11 +100,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         );
     }
 
-    scrollable(
-        container(content_col)
-            .width(Length::Fill)
-            .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 20.0, left: 0.0 }),
-    )
+    column![
+        header_col,
+        scrollable(
+            container(content_col)
+                .width(Length::Fill)
+                .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 20.0, left: 0.0 }),
+        ),
+    ]
+    .spacing(16)
     .into()
 }
 
@@ -257,10 +220,20 @@ fn theme_card<'a>(theme: &govee_lan::ThemeDef, is_active: bool) -> Element<'a, M
         );
     }
 
-    let inner = column![band, container(info_col).padding([6, 8])]
+    let inner = column![band, container(info_col).padding([8, 10])]
         .spacing(0);
 
-    let border_color = if is_active { style::ACCENT } else { style::SURFACE };
+    let border_color = if is_active { style::ACCENT } else { Color::TRANSPARENT };
+
+    let active_shadow = if is_active {
+        Shadow {
+            color: Color { a: 0.3, ..style::ACCENT },
+            offset: Vector::new(0.0, 0.0),
+            blur_radius: 12.0,
+        }
+    } else {
+        Shadow::default()
+    };
 
     button(inner)
         .width(CARD_WIDTH)
@@ -268,12 +241,7 @@ fn theme_card<'a>(theme: &govee_lan::ThemeDef, is_active: bool) -> Element<'a, M
         .on_press(Message::ApplyTheme(name))
         .style(move |_theme, status| {
             let bg = match status {
-                button::Status::Hovered => Color {
-                    r: style::SURFACE.r + 0.05,
-                    g: style::SURFACE.g + 0.05,
-                    b: style::SURFACE.b + 0.05,
-                    a: 1.0,
-                },
+                button::Status::Hovered => style::SURFACE_HOVER,
                 _ => style::SURFACE,
             };
             button::Style {
@@ -281,10 +249,10 @@ fn theme_card<'a>(theme: &govee_lan::ThemeDef, is_active: bool) -> Element<'a, M
                 text_color: style::TEXT_PRIMARY,
                 border: Border {
                     color: border_color,
-                    width: if is_active { 2.0 } else { 1.0 },
-                    radius: style::RADIUS.into(),
+                    width: if is_active { 2.0 } else { 0.0 },
+                    radius: style::RADIUS_LG.into(),
                 },
-                ..Default::default()
+                shadow: active_shadow,
             }
         })
         .into()
