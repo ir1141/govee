@@ -1,6 +1,4 @@
 mod cli;
-mod theme_defs;
-mod theme_loader;
 mod themes;
 mod ambient;
 mod screen;

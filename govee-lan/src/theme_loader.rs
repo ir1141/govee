@@ -17,21 +17,16 @@ fn load_user_themes() -> Vec<ThemeDef> {
     let mut themes = Vec::new();
     let entries = match fs::read_dir(&dir) {
         Ok(e) => e,
-        Err(e) => {
-            crate::ui::error(&format!("Could not read {}: {e}", dir.display()));
-            return vec![];
-        }
+        Err(_) => return vec![],
     };
 
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "toml") {
-            match fs::read_to_string(&path) {
-                Ok(content) => match toml::from_str::<ThemeDef>(&content) {
-                    Ok(theme) => themes.push(theme),
-                    Err(e) => crate::ui::error(&format!("Skipping {}: {e}", path.display())),
-                },
-                Err(e) => crate::ui::error(&format!("Could not read {}: {e}", path.display())),
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Ok(theme) = toml::from_str::<ThemeDef>(&content) {
+                    themes.push(theme);
+                }
             }
         }
     }
