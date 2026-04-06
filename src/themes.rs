@@ -500,27 +500,13 @@ pub fn get_theme(name: &str) -> Option<&'static ThemeDef> {
 }
 
 pub fn theme_list_display() -> String {
-    let categories = ["static", "nature", "vibes", "functional", "seasonal"];
-    let mut out = String::new();
-    for cat in &categories {
-        let names: Vec<&str> = THEMES
-            .iter()
-            .filter(|t| t.category == *cat)
-            .map(|t| t.name)
-            .collect();
-        if !names.is_empty() {
-            let label = match *cat {
-                "static" => "Static",
-                "nature" => "Nature",
-                "vibes" => "Vibes",
-                "functional" => "Functional",
-                "seasonal" => "Seasonal",
-                _ => cat,
-            };
-            out.push_str(&format!("  {label}: {}\n", names.join(", ")));
-        }
-    }
-    out
+    let themes: Vec<(&str, &str)> = THEMES.iter().map(|t| (t.name, t.category)).collect();
+    crate::ui::theme_list_help(&themes)
+}
+
+pub fn print_theme_list() {
+    let themes: Vec<(&str, &str)> = THEMES.iter().map(|t| (t.name, t.category)).collect();
+    crate::ui::theme_list(&themes);
 }
 
 // ── State initialization ────────────────────────────────────────────────────
@@ -773,13 +759,15 @@ pub fn run_theme(
     let theme = match get_theme(name) {
         Some(t) => t,
         None => {
-            eprintln!("Unknown theme '{name}'.\n\nAvailable themes:\n{}", theme_list_display());
+            crate::ui::error_hint(
+                &format!("Unknown theme \"{name}\""),
+                "Run govee theme --list to see available themes",
+            );
             std::process::exit(1);
         }
     };
 
     let ip = resolve_or_exit(ip.as_deref());
-    println!("Using device at {ip}");
 
     match &theme.kind {
         ThemeKind::Solid { color } => {
@@ -799,7 +787,11 @@ pub fn run_theme(
                 }),
                 debug,
             );
-            println!("Theme '{name}' applied ({ip})");
+            {
+                use colored::Colorize;
+                crate::ui::info("Theme", &format!("{} {}", name.white().bold(), format!("[{}]", theme.category).dimmed()));
+                crate::ui::info("Brightness", &crate::ui::brightness_bar(brightness));
+            }
         }
         ThemeKind::Animated { behavior, delay } => {
             if let Err(e) = send_brightness(&ip, brightness) {
@@ -810,10 +802,13 @@ pub fn run_theme(
             }
             std::thread::sleep(Duration::from_millis(100));
 
-            println!(
-                "Theme '{name}' [{}] | Brightness: {brightness}% | {segments} segments | Press Ctrl+C to stop",
-                theme.category
-            );
+            {
+                use colored::Colorize;
+                crate::ui::info("Theme", &format!("{} {}", name.white().bold(), format!("[{}]", theme.category).dimmed()));
+                crate::ui::info("Brightness", &crate::ui::brightness_bar(brightness));
+                crate::ui::info("Segments", &format!("{segments}"));
+                println!("  {}", "Press Ctrl+C to stop".dimmed());
+            }
 
             ctrlc_setup();
 
@@ -834,16 +829,17 @@ pub fn run_theme(
                 };
 
                 let _ = send_segments(&ip, &send_colors, true);
+                crate::ui::status_line(&send_colors, "");
 
                 let delay_ms = get_delay(delay, &mut rng);
                 std::thread::sleep(Duration::from_millis(delay_ms));
                 t_acc += delay_ms as f64 / 1000.0;
             }
 
-            println!();
-            println!("Deactivating DreamView mode...");
+            crate::ui::status_line_finish();
+            crate::ui::deactivating();
             let _ = razer_deactivate(&ip);
-            println!("Stopped.");
+            crate::ui::stopped();
         }
     }
 }
