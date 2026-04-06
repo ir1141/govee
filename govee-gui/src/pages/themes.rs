@@ -20,7 +20,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         let btn = button(text(cat).size(12))
             .padding([4, 10])
             .on_press(Message::ThemeFilterChanged(cat.to_string()))
-            .style(move |theme, status| {
+            .style(move |_theme, status| {
                 let base = button::Style {
                     background: Some(iced::Background::Color(if is_active {
                         style::ACCENT
@@ -133,24 +133,95 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .into()
 }
 
+fn extract_preview_colors(behavior: &govee_lan::Behavior) -> Vec<Color> {
+    use govee_lan::themes::palette_sample;
+    use govee_lan::Behavior;
+
+    match behavior {
+        Behavior::Heat { palette, .. }
+        | Behavior::Wave { palette, .. }
+        | Behavior::Breathe { palette, .. }
+        | Behavior::Drift { palette, .. }
+        | Behavior::Progression { palette, .. } => {
+            (0..4).map(|i| {
+                let (r, g, b) = palette_sample(palette, i as f64 / 3.0);
+                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+            }).collect()
+        }
+        Behavior::Flash { base_palette, .. } => {
+            (0..4).map(|i| {
+                let (r, g, b) = palette_sample(base_palette, i as f64 / 3.0);
+                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+            }).collect()
+        }
+        Behavior::Particles { bg, palette, .. } => {
+            let mut colors = vec![Color::from_rgb(bg.0 as f32 / 255.0, bg.1 as f32 / 255.0, bg.2 as f32 / 255.0)];
+            for i in 0..3 {
+                let (r, g, b) = palette_sample(palette, i as f64 / 2.0);
+                colors.push(Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0));
+            }
+            colors
+        }
+        Behavior::Twinkle { bg, colors, .. } => {
+            let mut out = vec![Color::from_rgb(bg.0 as f32 / 255.0, bg.1 as f32 / 255.0, bg.2 as f32 / 255.0)];
+            for &(r, g, b) in colors.iter().take(3) {
+                out.push(Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0));
+            }
+            out
+        }
+        Behavior::GradientWave { color_a, color_b, .. } => {
+            vec![
+                Color::from_rgb(color_a.0 as f32 / 255.0, color_a.1 as f32 / 255.0, color_a.2 as f32 / 255.0),
+                Color::from_rgb(color_b.0 as f32 / 255.0, color_b.1 as f32 / 255.0, color_b.2 as f32 / 255.0),
+            ]
+        }
+        Behavior::Strobe { colors, .. } | Behavior::Alternating { colors, .. } => {
+            colors.iter().take(4).map(|&(r, g, b)| {
+                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+            }).collect()
+        }
+        Behavior::HueRotate { saturation, value, .. } => {
+            (0..4).map(|i| {
+                let (r, g, b) = govee_lan::themes::hsv_to_rgb(i as f64 / 4.0, *saturation, *value);
+                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+            }).collect()
+        }
+        Behavior::RadiatePulse { color, .. } => {
+            vec![Color::from_rgb(color.0 as f32 / 255.0, color.1 as f32 / 255.0, color.2 as f32 / 255.0)]
+        }
+    }
+}
+
 fn theme_card<'a>(theme: &govee_lan::ThemeDef, is_active: bool) -> Element<'a, Message> {
     let name = theme.name.clone();
 
-    // Color band
-    let band_color = match &theme.kind {
+    // Color band — show palette preview
+    let band: Element<'a, Message> = match &theme.kind {
         ThemeKind::Solid { color } => {
             let (r, g, b) = *color;
-            Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+            let c = Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
+            container(iced::widget::Space::new(Length::Fill, COLOR_BAND_HEIGHT))
+                .width(Length::Fill)
+                .style(move |_theme| container::Style {
+                    background: Some(iced::Background::Color(c)),
+                    ..Default::default()
+                })
+                .into()
         }
-        ThemeKind::Animated { .. } => style::SURFACE,
+        ThemeKind::Animated { behavior, .. } => {
+            let colors = extract_preview_colors(behavior);
+            let segments: Vec<Element<'a, Message>> = colors.into_iter().map(|c| {
+                container(iced::widget::Space::new(Length::Fill, COLOR_BAND_HEIGHT))
+                    .width(Length::Fill)
+                    .style(move |_theme| container::Style {
+                        background: Some(iced::Background::Color(c)),
+                        ..Default::default()
+                    })
+                    .into()
+            }).collect();
+            Row::with_children(segments).spacing(0).into()
+        }
     };
-
-    let band = container(iced::widget::Space::new(Length::Fill, COLOR_BAND_HEIGHT))
-        .width(Length::Fill)
-        .style(move |_theme| container::Style {
-            background: Some(iced::Background::Color(band_color)),
-            ..Default::default()
-        });
 
     // Info section
     let mut info_col = column![

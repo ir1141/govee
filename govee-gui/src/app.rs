@@ -22,6 +22,7 @@ pub enum Message {
     SetBrightness(u8),
     SetColor(u8, u8, u8),
     SetColorTemp(u16),
+    #[allow(dead_code)]
     DeviceCommandResult(Result<(), String>),
     DiscoveryTick,
     DevicesDiscovered(Vec<DeviceInfo>),
