@@ -4,7 +4,7 @@ use serde::Deserialize;
 use std::net::{Ipv4Addr, UdpSocket};
 use std::time::{Duration, Instant};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct DeviceInfo {
     pub ip: String,
     #[serde(default)]

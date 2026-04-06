@@ -21,5 +21,6 @@ fn main() -> iced::Result {
             )
         })
         .window_size(Size::new(900.0, 600.0))
+        .subscription(app::App::subscription)
         .run_with(app::App::new)
 }

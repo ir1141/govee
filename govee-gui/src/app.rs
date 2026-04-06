@@ -1,6 +1,7 @@
 use govee_lan::DeviceInfo;
 use iced::widget::{column, container, row};
 use iced::{Element, Length, Task};
+use std::time::Duration;
 use crate::config::GuiConfig;
 use crate::pages;
 use crate::widgets::{sidebar, status_bar};
@@ -22,6 +23,9 @@ pub enum Message {
     SetColor(u8, u8, u8),
     SetColorTemp(u16),
     DeviceCommandResult(Result<(), String>),
+    DiscoveryTick,
+    DevicesDiscovered(Vec<DeviceInfo>),
+    SelectDevice(usize),
 }
 
 pub struct App {
@@ -52,19 +56,25 @@ impl App {
             config.controls.color[2],
         );
         let color_temp = config.controls.color_temp;
-        (
-            Self {
-                page,
-                device: None,
-                devices: vec![],
-                config,
-                power: true,
-                brightness,
-                color,
-                color_temp,
-            },
-            Task::none(),
-        )
+        let app = Self {
+            page,
+            device: None,
+            devices: vec![],
+            config,
+            power: true,
+            brightness,
+            color,
+            color_temp,
+        };
+        let init_task = Task::perform(
+            async { govee_lan::scan_devices(Duration::from_secs(2)) },
+            Message::DevicesDiscovered,
+        );
+        (app, init_task)
+    }
+
+    pub fn subscription(&self) -> iced::Subscription<Message> {
+        iced::time::every(Duration::from_secs(10)).map(|_| Message::DiscoveryTick)
     }
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
@@ -137,6 +147,35 @@ impl App {
                 }
             }
             Message::DeviceCommandResult(_) => {}
+            Message::DiscoveryTick => {
+                return Task::perform(
+                    async { govee_lan::scan_devices(Duration::from_secs(2)) },
+                    Message::DevicesDiscovered,
+                );
+            }
+            Message::DevicesDiscovered(devices) => {
+                self.devices = devices;
+                if self.device.is_none() {
+                    let target_ip = self.config.general.last_device_ip.as_deref();
+                    let pick = self
+                        .devices
+                        .iter()
+                        .find(|d| target_ip.is_some_and(|ip| ip == d.ip))
+                        .or_else(|| self.devices.first());
+                    if let Some(dev) = pick {
+                        self.device = Some(dev.clone());
+                        self.config.general.last_device_ip = Some(dev.ip.clone());
+                        self.config.save();
+                    }
+                }
+            }
+            Message::SelectDevice(idx) => {
+                if let Some(dev) = self.devices.get(idx) {
+                    self.device = Some(dev.clone());
+                    self.config.general.last_device_ip = Some(dev.ip.clone());
+                    self.config.save();
+                }
+            }
         }
         Task::none()
     }
