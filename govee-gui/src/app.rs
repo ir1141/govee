@@ -22,8 +22,7 @@ pub enum Message {
     SetBrightness(u8),
     SetColor(u8, u8, u8),
     SetColorTemp(u16),
-    #[allow(dead_code)]
-    DeviceCommandResult(Result<(), String>),
+    DeviceCommandDone,
     DiscoveryTick,
     DevicesDiscovered(Vec<DeviceInfo>),
     SelectDevice(usize),
@@ -144,7 +143,7 @@ impl App {
                         async move {
                             govee_lan::send_turn(&ip, on).map_err(|e| e.to_string())
                         },
-                        Message::DeviceCommandResult,
+                        |_| Message::DeviceCommandDone,
                     );
                 }
             }
@@ -158,7 +157,7 @@ impl App {
                         async move {
                             govee_lan::send_brightness(&ip, value).map_err(|e| e.to_string())
                         },
-                        Message::DeviceCommandResult,
+                        |_| Message::DeviceCommandDone,
                     );
                 }
             }
@@ -172,7 +171,7 @@ impl App {
                         async move {
                             govee_lan::send_color(&ip, r, g, b).map_err(|e| e.to_string())
                         },
-                        Message::DeviceCommandResult,
+                        |_| Message::DeviceCommandDone,
                     );
                 }
             }
@@ -186,11 +185,11 @@ impl App {
                         async move {
                             govee_lan::send_color_temp(&ip, kelvin).map_err(|e| e.to_string())
                         },
-                        Message::DeviceCommandResult,
+                        |_| Message::DeviceCommandDone,
                     );
                 }
             }
-            Message::DeviceCommandResult(_) => {}
+            Message::DeviceCommandDone => {}
             Message::DiscoveryTick => {
                 return Task::perform(
                     async { govee_lan::scan_devices(Duration::from_secs(2)) },
@@ -236,7 +235,7 @@ impl App {
                                 async move {
                                     govee_lan::send_color(&ip, r, g, b).map_err(|e| e.to_string())
                                 },
-                                Message::DeviceCommandResult,
+                                |_| Message::DeviceCommandDone,
                             );
                         }
                         govee_lan::ThemeKind::Animated { .. } => {
