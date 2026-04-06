@@ -49,6 +49,8 @@ pub enum Message {
     SetAmbientBrightness(u8),
     ToggleAmbientDim(bool),
     StartAmbient,
+
+    ToggleMirror(bool),
 }
 
 pub struct App {
@@ -67,6 +69,7 @@ pub struct App {
     pub active_mode: Option<String>,
     pub elapsed_secs: u64,
     pub subprocess_start: Option<std::time::Instant>,
+    pub mirror: bool,
 }
 
 impl App {
@@ -86,6 +89,7 @@ impl App {
             config.controls.color[2],
         );
         let color_temp = config.controls.color_temp;
+        let mirror = config.screen.mirror;
         let app = Self {
             page,
             device: None,
@@ -101,6 +105,7 @@ impl App {
             theme_filter: "all".into(),
             active_mode: None,
             elapsed_secs: 0,
+            mirror,
             subprocess_start: None,
         };
         let init_task = Task::perform(
@@ -240,7 +245,9 @@ impl App {
                         }
                         govee_lan::ThemeKind::Animated { .. } => {
                             let ip = dev.ip.clone();
-                            match crate::subprocess::spawn_govee(&["theme", &name], Some(&ip)) {
+                            let mut args = vec!["theme", &name];
+                            if self.mirror { args.push("--mirror"); }
+                            match crate::subprocess::spawn_govee(&args, Some(&ip)) {
                                 Ok(child) => {
                                     self.subprocess = Some(child);
                                     self.active_theme = Some(name);
@@ -281,6 +288,12 @@ impl App {
             Message::ToggleAudioMirror(v) => { self.config.audio.mirror = v; self.config.save(); }
             Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; self.config.save(); }
             Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); }
+            Message::ToggleMirror(v) => {
+                self.mirror = v;
+                self.config.screen.mirror = v;
+                self.config.audio.mirror = v;
+                self.config.save();
+            }
             Message::StartScreen => {
                 if let Some(ref mut child) = self.subprocess {
                     crate::subprocess::kill(child);
@@ -295,7 +308,7 @@ impl App {
                         "--brightness".into(), s.brightness.to_string(),
                         "--segments".into(), s.segments.to_string(),
                     ];
-                    if s.mirror { args.push("--mirror".into()); }
+                    if self.mirror { args.push("--mirror".into()); }
                     let ip = dev.ip.clone();
                     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
                     match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
@@ -323,7 +336,7 @@ impl App {
                         "--brightness".into(), a.brightness.to_string(),
                         "--segments".into(), a.segments.to_string(),
                     ];
-                    if a.mirror { args.push("--mirror".into()); }
+                    if self.mirror { args.push("--mirror".into()); }
                     let ip = dev.ip.clone();
                     let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
                     match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
@@ -412,7 +425,7 @@ impl App {
         };
         let main = column![
             row![sidebar, content].height(Length::Fill),
-            status_bar::view(self.device.is_some(), &mode_label),
+            status_bar::view(self.device.is_some(), &mode_label, self.mirror),
         ];
 
         container(main)

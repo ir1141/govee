@@ -1,9 +1,9 @@
-use iced::widget::{container, row, text};
+use iced::widget::{container, row, text, toggler};
 use iced::{Background, Border, Color, Element, Length};
 use crate::app::Message;
 use crate::style;
 
-pub fn view(connected: bool, mode_label: &str) -> Element<'static, Message> {
+pub fn view(connected: bool, mode_label: &str, mirror: bool) -> Element<'static, Message> {
     let mode_label: String = mode_label.to_string();
 
     let status_text = if connected {
@@ -14,9 +14,22 @@ pub fn view(connected: bool, mode_label: &str) -> Element<'static, Message> {
 
     let mode_text = text(format!("Mode: {}", mode_label)).color(style::TEXT_SECONDARY);
 
-    let bar = row![status_text, mode_text]
-        .spacing(16.0)
-        .padding(8.0);
+    let mirror_toggle = row![
+        text("Mirror").size(13).color(style::TEXT_MUTED),
+        toggler(mirror).on_toggle(Message::ToggleMirror),
+    ]
+    .spacing(6)
+    .align_y(iced::Alignment::Center);
+
+    let bar = row![
+        status_text,
+        mode_text,
+        iced::widget::horizontal_space(),
+        mirror_toggle,
+    ]
+    .spacing(16.0)
+    .padding(8.0)
+    .align_y(iced::Alignment::Center);
 
     container(bar)
         .width(Length::Fill)
