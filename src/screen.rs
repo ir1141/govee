@@ -10,8 +10,10 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
     let mut capturer = match ScreenCapturer::new() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Failed to initialize Wayland capture: {e}");
-            eprintln!("Make sure your compositor supports wlr-screencopy-unstable-v1");
+            crate::ui::error_hint(
+                &format!("Failed to initialize Wayland capture: {e}"),
+                "Make sure your compositor supports wlr-screencopy-unstable-v1",
+            );
             process::exit(1);
         }
     };
@@ -27,34 +29,35 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
             process::exit(1);
         }
     };
-    println!("Using device at {ip}");
-
     let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);
 
     if let Err(e) = send_brightness(&ip, args.brightness) {
-        eprintln!("Failed to set brightness: {e}");
+        crate::ui::error(&format!("Failed to set brightness: {e}"));
     }
 
     if use_razer {
         if let Err(e) = razer_activate(&ip) {
-            eprintln!("Failed to activate DreamView: {e}");
+            crate::ui::error(&format!("Failed to activate DreamView: {e}"));
         }
         std::thread::sleep(Duration::from_millis(100));
+        use colored::Colorize;
         let mode = format!(
             "DreamView ({n_seg} segments{})",
             if args.gradient { ", gradient" } else { "" }
         );
-        println!("Mode: {mode} | ~{}fps | Smoothing: {} | Brightness: {}%",
-            args.fps, args.smoothing, args.brightness);
+        crate::ui::info("Mode", &format!("{} {}", mode.white(), format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()));
+        crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
     } else {
-        println!(
-            "Mode: single color (colorwc) | ~{}fps | Smoothing: {} | Brightness: {}%",
-            args.fps, args.smoothing, args.brightness
-        );
+        use colored::Colorize;
+        crate::ui::info("Mode", &format!("{} {}", "single color".white(), format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()));
+        crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
     }
-    println!("Press Ctrl+C to stop");
+    {
+        use colored::Colorize;
+        println!("  {}", "Press Ctrl+C to stop".dimmed());
+    }
 
     let mut smoothed: Vec<(f64, f64, f64)> = vec![(0.0, 0.0, 0.0); n_seg];
     let mut last_sent: Vec<(u8, u8, u8)> = vec![(0, 0, 0); n_seg];
@@ -126,12 +129,9 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
 
             last_send_time = Instant::now();
 
-            if args.verbose && any_changed {
-                let parts: Vec<String> = current_colors
-                    .iter()
-                    .map(|(r, g, b)| format!("({r:3},{g:3},{b:3})"))
-                    .collect();
-                println!("  -> {}", parts.join(" | "));
+            if any_changed {
+                let meta = format!("{}fps · smooth: {}", args.fps, args.smoothing);
+                crate::ui::status_line(&current_colors, &meta);
             }
 
             last_sent = current_colors;
@@ -143,10 +143,10 @@ pub fn run_screen(args: ScreenArgs, mirror: bool) {
         }
     }
 
-    println!();
+    crate::ui::status_line_finish();
     if use_razer {
-        println!("Deactivating DreamView mode...");
+        crate::ui::deactivating();
         let _ = razer_deactivate(&ip);
     }
-    println!("Stopped.");
+    crate::ui::stopped();
 }
