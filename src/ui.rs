@@ -133,7 +133,13 @@ fn category_label(category: &str) -> &str {
 /// Returns theme list as a string for clap help text.
 /// Uses ANSI colors — `colored` auto-disables when not a TTY.
 pub fn theme_list_help(themes: &[(&str, &str)]) -> String {
-    let categories = ["static", "nature", "vibes", "functional", "seasonal"];
+    let known = ["static", "nature", "vibes", "functional", "seasonal"];
+    let mut categories: Vec<&str> = known.to_vec();
+    for &(_, cat) in themes {
+        if !categories.contains(&cat) {
+            categories.push(cat);
+        }
+    }
     let mut out = format!("{}\n", "THEMES".purple().bold());
     for cat in &categories {
         let names: Vec<&str> = themes
@@ -146,7 +152,7 @@ pub fn theme_list_help(themes: &[(&str, &str)]) -> String {
         }
         let color = category_color(cat);
         let border = "│".color(color);
-        let label = category_label(cat).color(color);
+        let label = category_label(cat).color(color).bold();
         let joined = names.join(&format!(" {} ", "·".dimmed()));
         out.push_str(&format!("{border} {label}\n"));
         out.push_str(&format!("{border} {joined}\n"));

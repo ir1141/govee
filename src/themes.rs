@@ -1,5 +1,6 @@
 use govee_lan::*;
 use rand::RngExt;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
@@ -8,8 +9,32 @@ use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
 pub type Rgb = (u8, u8, u8);
 
-/// Palette anchor: (position 0.0–1.0, r, g, b)
-type PA = (f64, u8, u8, u8);
+/// Palette anchor: position 0.0–1.0 with an RGB color.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PA {
+    pub pos: f64,
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+}
+
+/// Wave parameters for the Wave behavior.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct WaveParam {
+    pub time_speed: f64,
+    pub spatial_freq: f64,
+    pub phase_offset: f64,
+}
+
+// ── Helpers for compact builtin definitions ─────────────────────────────────
+
+pub fn pa(pos: f64, r: u8, g: u8, b: u8) -> PA {
+    PA { pos, r, g, b }
+}
+
+pub fn wp(time_speed: f64, spatial_freq: f64, phase_offset: f64) -> WaveParam {
+    WaveParam { time_speed, spatial_freq, phase_offset }
+}
 
 // ── Color utilities ─────────────────────────────────────────────────────────
 
@@ -18,31 +43,30 @@ fn palette_sample(anchors: &[PA], t: f64) -> Rgb {
         return (0, 0, 0);
     }
     if anchors.len() == 1 {
-        return (anchors[0].1, anchors[0].2, anchors[0].3);
+        return (anchors[0].r, anchors[0].g, anchors[0].b);
     }
     let t = t.clamp(0.0, 1.0);
-    // Below the first anchor: return first color
-    if t <= anchors[0].0 {
-        return (anchors[0].1, anchors[0].2, anchors[0].3);
+    if t <= anchors[0].pos {
+        return (anchors[0].r, anchors[0].g, anchors[0].b);
     }
     for i in 0..anchors.len() - 1 {
-        let (pa, ra, ga, ba) = anchors[i];
-        let (pb, rb, gb, bb) = anchors[i + 1];
-        if t <= pb {
-            let f = if (pb - pa).abs() < 1e-9 {
+        let a = &anchors[i];
+        let b = &anchors[i + 1];
+        if t <= b.pos {
+            let f = if (b.pos - a.pos).abs() < 1e-9 {
                 0.0
             } else {
-                ((t - pa) / (pb - pa)).clamp(0.0, 1.0)
+                ((t - a.pos) / (b.pos - a.pos)).clamp(0.0, 1.0)
             };
             return (
-                (ra as f64 + (rb as f64 - ra as f64) * f) as u8,
-                (ga as f64 + (gb as f64 - ga as f64) * f) as u8,
-                (ba as f64 + (bb as f64 - ba as f64) * f) as u8,
+                (a.r as f64 + (b.r as f64 - a.r as f64) * f) as u8,
+                (a.g as f64 + (b.g as f64 - a.g as f64) * f) as u8,
+                (a.b as f64 + (b.b as f64 - a.b as f64) * f) as u8,
             );
         }
     }
     let l = anchors.last().unwrap();
-    (l.1, l.2, l.3)
+    (l.r, l.g, l.b)
 }
 
 fn lerp_rgb(a: Rgb, b: Rgb, t: f64) -> Rgb {
@@ -73,15 +97,18 @@ fn hsv_to_rgb(h: f64, s: f64, v: f64) -> Rgb {
 
 // ── Behavior engine ─────────────────────────────────────────────────────────
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Delay {
     Fixed(u64),
     Random(u64, u64),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Behavior {
-    /// Heat diffusion: fireplace, candlelight, campfire, lava
     Heat {
-        palette: &'static [PA],
+        palette: Vec<PA>,
         volatility: f64,
         spark_chance: f64,
         spark_boost: f64,
@@ -89,22 +116,19 @@ pub enum Behavior {
         dim_range: (f64, f64),
         diffusion: f64,
     },
-    /// Overlapping sine waves: ocean, aurora, northern lights
     Wave {
-        palette: &'static [PA],
-        waves: &'static [(f64, f64, f64)], // (time_speed, spatial_freq, phase_offset)
-        weights: &'static [f64],
+        palette: Vec<PA>,
+        waves: Vec<WaveParam>,
+        weights: Vec<f64>,
     },
-    /// Global breathing pulse: breathing, romantic, cozy
     Breathe {
-        palette: &'static [PA],
+        palette: Vec<PA>,
         speed: f64,
         power: u32,
     },
-    /// Lightning/flash on ambient base: storm, lightning, thunderstorm
     Flash {
-        base_palette: &'static [PA],
-        flash_palette: &'static [PA],
+        base_palette: Vec<PA>,
+        flash_palette: Vec<PA>,
         decay: f64,
         flash_chance: f64,
         spread: (usize, usize),
@@ -112,91 +136,83 @@ pub enum Behavior {
         base_spatial_freq: f64,
         flash_threshold: f64,
     },
-    /// Falling/cascading particles: rain, snowfall
     Particles {
         bg: Rgb,
-        palette: &'static [PA],
+        palette: Vec<PA>,
         speed: f64,
         spawn_chance: f64,
         bright_chance: f64,
     },
-    /// Random twinkling points: starfield
     Twinkle {
         bg: Rgb,
-        colors: &'static [Rgb],
+        colors: Vec<Rgb>,
         on_chance: f64,
         fade_speed: f64,
     },
-    /// Rotating rainbow hue: rainbow
     HueRotate {
         speed: f64,
         saturation: f64,
         value: f64,
     },
-    /// Two-color oscillating gradient: gradient-wave
     GradientWave {
         color_a: Rgb,
         color_b: Rgb,
         speed: f64,
     },
-    /// Fast color cycling with flash bursts: nightclub
     Strobe {
-        colors: &'static [Rgb],
+        colors: Vec<Rgb>,
         cycle_speed: f64,
         flash_chance: f64,
     },
-    /// Alternating colors with sparkle: christmas, halloween
     Alternating {
-        colors: &'static [Rgb],
+        colors: Vec<Rgb>,
         sparkle: Rgb,
         sparkle_chance: f64,
         shift_speed: f64,
     },
-    /// Continuous palette drift: cyberpunk, vaporwave
     Drift {
-        palette: &'static [PA],
+        palette: Vec<PA>,
         speed: f64,
     },
-    /// Pulse radiating from center outward
     RadiatePulse {
         color: Rgb,
         speed: f64,
         width: f64,
     },
-    /// Timed color progression: sunrise
     Progression {
-        palette: &'static [PA],
+        palette: Vec<PA>,
         duration_secs: f64,
         spatial_spread: f64,
     },
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ThemeKind {
     Solid { color: Rgb },
     Animated { behavior: Behavior, delay: Delay },
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ThemeDef {
-    pub name: &'static str,
-    pub category: &'static str,
+    pub name: String,
+    pub category: String,
     pub kind: ThemeKind,
 }
 
-// ── Theme registry (definitions in theme_defs.rs) ──────────────────────────
+// ── Theme registry ──────────────────────────────────────────────────────────
 
-use crate::theme_defs::THEMES;
-
-// ── Lookup ───────────────────────────────────────────────────────────────────
-
-pub fn get_theme(name: &str) -> Option<&'static ThemeDef> {
-    THEMES.iter().find(|t| t.name == name)
+pub fn get_theme(name: &str) -> Option<ThemeDef> {
+    crate::theme_loader::load_all_themes()
+        .into_iter()
+        .find(|t| t.name == name)
 }
 
 pub fn theme_list_display() -> String {
-    let themes: Vec<(&str, &str)> = THEMES.iter().map(|t| (t.name, t.category)).collect();
-    crate::ui::theme_list_help(&themes)
+    let themes = crate::theme_loader::load_all_themes();
+    let pairs: Vec<(&str, &str)> = themes.iter().map(|t| (t.name.as_str(), t.category.as_str())).collect();
+    crate::ui::theme_list_help(&pairs)
 }
-
 
 // ── State initialization ────────────────────────────────────────────────────
 
@@ -256,9 +272,9 @@ fn render_frame(
                 .map(|i| {
                     let mut val = 0.0;
                     let mut tw = 0.0;
-                    for (j, &(spd, freq, off)) in waves.iter().enumerate() {
+                    for (j, w_param) in waves.iter().enumerate() {
                         let w = weights.get(j).copied().unwrap_or(1.0);
-                        val += ((t * spd + i as f64 * freq + off).sin() * 0.5 + 0.5) * w;
+                        val += ((t * w_param.time_speed + i as f64 * w_param.spatial_freq + w_param.phase_offset).sin() * 0.5 + 0.5) * w;
                         tw += w;
                     }
                     palette_sample(palette, val / tw)
@@ -301,16 +317,13 @@ fn render_frame(
         }
 
         Behavior::Particles { bg, palette, speed, spawn_chance, bright_chance } => {
-            // Fade first so shifted values lose brightness as they travel
             for s in state.iter_mut().take(n_seg) {
                 *s *= 1.0 - speed;
             }
-            // Shift particles toward higher indices (cascade down)
             for i in (1..n_seg).rev() {
                 state[i] = state[i - 1];
             }
             state[0] = 0.0;
-            // Spawn at top (after shift so it renders at full brightness)
             if rng.random_range(0.0..1.0) < *spawn_chance {
                 state[0] = if rng.random_range(0.0..1.0) < *bright_chance {
                     1.0
