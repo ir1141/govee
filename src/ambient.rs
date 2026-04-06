@@ -17,22 +17,28 @@ pub fn run_ambient(args: AmbientArgs) {
         "surfaceTint",
     ];
     if !valid_colors.contains(&args.color.as_str()) {
-        eprintln!(
-            "Invalid color '{}'. Available: {}",
-            args.color,
-            valid_colors.join(", ")
+        crate::ui::error_hint(
+            &format!("Invalid color '{}'", args.color),
+            &format!("Available: {}", valid_colors.join(", ")),
         );
         process::exit(1);
     }
 
+    if args.ip.is_none() {
+        crate::ui::discovery_scanning();
+    }
     let ip = match resolve_ip(args.ip.as_deref(), SCAN_TIMEOUT) {
-        Ok(ip) => ip,
-        Err(e) => {
-            eprintln!("{e}");
+        Ok(ip) => {
+            if args.ip.is_none() {
+                crate::ui::discovery_found("device", &ip);
+            }
+            ip
+        }
+        Err(_) => {
+            crate::ui::error_hint("No device found", "Is the strip powered on and connected to WiFi?");
             process::exit(1);
         }
     };
-    println!("Using device at {ip}");
 
     ctrlc_setup();
 
@@ -43,13 +49,13 @@ pub fn run_ambient(args: AmbientArgs) {
     };
 
     if let Err(e) = send_brightness(&ip, args.brightness) {
-        eprintln!("Failed to set brightness: {e}");
+        crate::ui::error(&format!("Failed to set brightness: {e}"));
     }
 
     let path = match scheme_path() {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("{e}");
+            crate::ui::error(&format!("{e}"));
             process::exit(1);
         }
     };
@@ -57,19 +63,21 @@ pub fn run_ambient(args: AmbientArgs) {
     let mut last_rgb = None;
     if let Some((r, g, b)) = read_scheme_color(&path, &color_key) {
         if let Err(e) = send_color(&ip, r, g, b) {
-            eprintln!("Failed to send color: {e}");
+            crate::ui::error(&format!("Failed to send color: {e}"));
         }
         if args.verbose {
-            println!("Initial color: ({r}, {g}, {b}) from {color_key}");
+            crate::ui::info("Color", &crate::ui::color_swatch_full(r, g, b));
         }
         last_rgb = Some((r, g, b));
     }
 
-    println!(
-        "Watching {} for theme changes (Ctrl+C to stop)",
-        path.display()
-    );
-    println!("Color key: {color_key} | Brightness: {}%", args.brightness);
+    {
+        use colored::Colorize;
+        crate::ui::info("Watching", &format!("{}", path.display()));
+        crate::ui::info("Color key", &color_key);
+        crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
+        println!("  {}", "Press Ctrl+C to stop".dimmed());
+    }
 
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
@@ -111,22 +119,23 @@ pub fn run_ambient(args: AmbientArgs) {
                     let rgb = (r, g, b);
                     if Some(rgb) != last_rgb {
                         if let Err(e) = send_color(&ip, r, g, b) {
-                            eprintln!("Failed to send color: {e}");
+                            crate::ui::error(&format!("Failed to send color: {e}"));
                         }
                         last_rgb = Some(rgb);
                         if args.verbose {
-                            println!("Updated: ({r}, {g}, {b})");
+                            crate::ui::info("Updated", &crate::ui::color_swatch(r, g, b));
                         }
                     }
                 }
             }
             Err(e) => {
-                eprintln!("inotify error: {e}");
+                crate::ui::error(&format!("inotify error: {e}"));
                 break;
             }
         }
     }
-    println!("\nStopped.");
+    println!();
+    crate::ui::stopped();
 }
 
 fn scheme_path() -> anyhow::Result<PathBuf> {
