@@ -1,3 +1,4 @@
+mod config;
 mod style;
 
 use iced::widget::{column, container, text};
