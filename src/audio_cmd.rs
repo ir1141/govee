@@ -8,18 +8,17 @@ use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
 pub fn run_audio(args: AudioArgs, mirror: bool) {
     let ip = resolve_or_exit(args.ip.as_deref());
-    println!("Using device at {ip}");
 
     let use_razer = !args.no_dreamview;
     let n_seg = if use_razer { args.segments.max(1) } else { 1 };
 
     if let Err(e) = send_brightness(&ip, args.brightness) {
-        eprintln!("Failed to set brightness: {e}");
+        crate::ui::error(&format!("Failed to set brightness: {e}"));
     }
 
     if use_razer {
         if let Err(e) = razer_activate(&ip) {
-            eprintln!("Failed to activate DreamView: {e}");
+            crate::ui::error(&format!("Failed to activate DreamView: {e}"));
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -27,8 +26,10 @@ pub fn run_audio(args: AudioArgs, mirror: bool) {
     let analyzer = match AudioAnalyzer::new() {
         Ok(a) => a,
         Err(e) => {
-            eprintln!("Failed to start audio capture: {e}");
-            eprintln!("Make sure PulseAudio is running and audio is playing");
+            crate::ui::error_hint(
+                &format!("Failed to start audio capture: {e}"),
+                "Make sure PulseAudio is running and audio is playing",
+            );
             if use_razer {
                 let _ = razer_deactivate(&ip);
             }
@@ -44,11 +45,12 @@ pub fn run_audio(args: AudioArgs, mirror: bool) {
     } else {
         "single color".to_string()
     };
-    println!(
-        "Mode: {:?} | Palette: {:?} | {} | Sensitivity: {} | Brightness: {}%",
-        args.mode, args.palette, mode_str, args.sensitivity, args.brightness
-    );
-    println!("Press Ctrl+C to stop");
+    {
+        use colored::Colorize;
+        crate::ui::info("Mode", &format!("{} {}", format!("{:?}", args.mode).white(), format!("{} · {:?} · sens: {}", mode_str, args.palette, args.sensitivity).dimmed()));
+        crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
+        println!("  {}", "Press Ctrl+C to stop".dimmed());
+    }
 
     ctrlc_setup();
 
@@ -102,19 +104,12 @@ pub fn run_audio(args: AudioArgs, mirror: bool) {
             let (r, g, b) = send_colors[0];
             let _ = send_color(&ip, r, g, b);
         }
-        if args.verbose {
-            let parts: Vec<String> = current_colors
-                .iter()
-                .map(|(r, g, b)| format!("({r:3},{g:3},{b:3})"))
-                .collect();
-            println!(
-                "  E:{:.2} B:[{:.2},{:.2},{:.2},{:.2},{:.2},{:.2}] beat:{} -> {}",
-                audio.energy,
-                audio.bands[0], audio.bands[1], audio.bands[2],
-                audio.bands[3], audio.bands[4], audio.bands[5],
-                audio.beat,
-                parts.join(" | ")
+        {
+            let meta = format!(
+                "E:{:.1} beat:{} · {:?}",
+                audio.energy, audio.beat, args.palette
             );
+            crate::ui::status_line(&current_colors, &meta);
         }
 
         t += tick.as_secs_f64();
@@ -125,11 +120,11 @@ pub fn run_audio(args: AudioArgs, mirror: bool) {
         }
     }
 
-    println!();
+    crate::ui::status_line_finish();
     drop(analyzer);
     if use_razer {
-        println!("Deactivating DreamView mode...");
+        crate::ui::deactivating();
         let _ = razer_deactivate(&ip);
     }
-    println!("Stopped.");
+    crate::ui::stopped();
 }
