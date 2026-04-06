@@ -504,10 +504,6 @@ pub fn theme_list_display() -> String {
     crate::ui::theme_list_help(&themes)
 }
 
-pub fn print_theme_list() {
-    let themes: Vec<(&str, &str)> = THEMES.iter().map(|t| (t.name, t.category)).collect();
-    crate::ui::theme_list(&themes);
-}
 
 // ── State initialization ────────────────────────────────────────────────────
 
