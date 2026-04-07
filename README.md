@@ -336,8 +336,6 @@ Govee strips with LAN API enabled listen for UDP commands on your local network:
 - **Unicast** (port `4003`) for control commands
 - **DreamView/Razer protocol** for per-segment color control (base64-encoded binary over UDP)
 
-No authentication, no cloud dependency, no rate limits.
-
 ## Troubleshooting
 
 - **Device not found**: Make sure LAN Control is enabled in Govee Home app (Device > Settings > LAN Control). The device must be on the same subnet.
