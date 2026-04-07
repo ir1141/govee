@@ -26,105 +26,110 @@ pub struct CapturedFrame {
 /// At 4K (3840x2160) with step=4, we sample ~500K pixels instead of ~8M.
 const SAMPLE_STEP: u32 = 4;
 
-impl CapturedFrame {
-    /// Prominent color from a rectangular region using top-percentile luminance.
-    /// Two passes over the frame buffer directly (no allocation): first builds a
-    /// brightness histogram, then averages only the top 20% brightest pixels.
-    fn prominent_color(&self, x: u32, y: u32, w: u32, h: u32) -> (u8, u8, u8) {
-        let bpp: u32 = 4;
-        let y_end = (y + h).min(self.height);
-        let x_end = (x + w).min(self.width);
+struct SegmentAccum {
+    histogram: [u32; 256],
+    r_sum: [u64; 256],
+    g_sum: [u64; 256],
+    b_sum: [u64; 256],
+    total: u32,
+}
 
-        // Pass 1: build luminance histogram and count total pixels.
-        let mut histogram = [0u32; 256];
-        let mut total = 0u32;
-
-        let mut row = y;
-        while row < y_end {
-            let mut col = x;
-            while col < x_end {
-                let offset = (row * self.stride + col * bpp) as usize;
-                if offset + 3 < self.data.len() {
-                    let b = self.data[offset];
-                    let g = self.data[offset + 1];
-                    let r = self.data[offset + 2];
-                    let lum = ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as u8;
-                    histogram[lum as usize] += 1;
-                    total += 1;
-                }
-                col += SAMPLE_STEP;
-            }
-            row += SAMPLE_STEP;
+impl SegmentAccum {
+    fn new() -> Self {
+        Self {
+            histogram: [0u32; 256],
+            r_sum: [0u64; 256],
+            g_sum: [0u64; 256],
+            b_sum: [0u64; 256],
+            total: 0,
         }
+    }
 
-        if total == 0 {
+    fn prominent_color(&self) -> (u8, u8, u8) {
+        if self.total == 0 {
             return (0, 0, 0);
         }
 
-        // Find luminance cutoff for the top 20% of pixels.
-        let threshold_count = total.div_ceil(5);
+        let threshold_count = self.total.div_ceil(5);
         let mut cumulative = 0u32;
-        let mut cutoff: u8 = 0;
-        for bucket in (0..=255u8).rev() {
-            cumulative += histogram[bucket as usize];
+        let mut cutoff: usize = 0;
+        for bucket in (0..=255usize).rev() {
+            cumulative += self.histogram[bucket];
             if cumulative >= threshold_count {
                 cutoff = bucket;
                 break;
             }
         }
 
-        // Pass 2: re-scan and average only pixels at or above the cutoff.
-        let (mut r_sum, mut g_sum, mut b_sum) = (0u64, 0u64, 0u64);
+        let mut r_total = 0u64;
+        let mut g_total = 0u64;
+        let mut b_total = 0u64;
         let mut count = 0u64;
-
-        let mut row = y;
-        while row < y_end {
-            let mut col = x;
-            while col < x_end {
-                let offset = (row * self.stride + col * bpp) as usize;
-                if offset + 3 < self.data.len() {
-                    let b = self.data[offset];
-                    let g = self.data[offset + 1];
-                    let r = self.data[offset + 2];
-                    let lum = ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as u8;
-                    if lum >= cutoff {
-                        r_sum += r as u64;
-                        g_sum += g as u64;
-                        b_sum += b as u64;
-                        count += 1;
-                    }
-                }
-                col += SAMPLE_STEP;
-            }
-            row += SAMPLE_STEP;
+        for bucket in cutoff..=255 {
+            let h = self.histogram[bucket] as u64;
+            r_total += self.r_sum[bucket];
+            g_total += self.g_sum[bucket];
+            b_total += self.b_sum[bucket];
+            count += h;
         }
 
         if count == 0 {
             return (0, 0, 0);
         }
         (
-            (r_sum / count) as u8,
-            (g_sum / count) as u8,
-            (b_sum / count) as u8,
+            (r_total / count) as u8,
+            (g_total / count) as u8,
+            (b_total / count) as u8,
         )
     }
+}
 
+impl CapturedFrame {
     /// Extract colors by sampling full-height vertical columns, split into N segments.
+    /// Single row-major pass over the frame buffer builds per-segment luminance
+    /// histograms with bucketed RGB sums, then computes top-20% averages without
+    /// re-reading the frame data.
     pub fn extract_segment_colors(&self, segments: usize) -> Vec<(u8, u8, u8)> {
         let segments = segments.max(1);
         let seg_w = self.width / segments as u32;
 
-        (0..segments)
-            .map(|i| {
-                let x0 = i as u32 * seg_w;
-                let x1 = if i == segments - 1 {
-                    self.width
-                } else {
-                    (i as u32 + 1) * seg_w
-                };
-                self.prominent_color(x0, 0, x1 - x0, self.height)
-            })
-            .collect()
+        if seg_w == 0 {
+            return vec![(0, 0, 0); segments];
+        }
+
+        let mut accums: Vec<SegmentAccum> = (0..segments).map(|_| SegmentAccum::new()).collect();
+        let bpp: u32 = 4;
+        let last_seg = segments - 1;
+
+        // Phase 1: single row-major scan, bucketing pixels into per-segment accumulators.
+        let mut row = 0u32;
+        while row < self.height {
+            let row_offset = row * self.stride;
+            let mut col = 0u32;
+            while col < self.width {
+                let offset = (row_offset + col * bpp) as usize;
+                if offset + 3 < self.data.len() {
+                    let seg_idx = ((col / seg_w) as usize).min(last_seg);
+
+                    let b = self.data[offset];
+                    let g = self.data[offset + 1];
+                    let r = self.data[offset + 2];
+                    let lum = ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as usize;
+
+                    let acc = &mut accums[seg_idx];
+                    acc.histogram[lum] += 1;
+                    acc.r_sum[lum] += r as u64;
+                    acc.g_sum[lum] += g as u64;
+                    acc.b_sum[lum] += b as u64;
+                    acc.total += 1;
+                }
+                col += SAMPLE_STEP;
+            }
+            row += SAMPLE_STEP;
+        }
+
+        // Phase 2: compute prominent color per segment from accumulators only.
+        accums.iter().map(SegmentAccum::prominent_color).collect()
     }
 }
 
