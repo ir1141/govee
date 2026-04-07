@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::time::Duration;
 use govee_lan::{send_brightness, razer_activate, razer_deactivate};
 
@@ -26,13 +27,13 @@ pub fn shutdown(ip: &str, use_razer: bool) {
     crate::ui::stopped();
 }
 
-pub fn apply_mirror(colors: &[(u8, u8, u8)], mirror: bool) -> Vec<(u8, u8, u8)> {
+pub fn apply_mirror(colors: &[(u8, u8, u8)], mirror: bool) -> Cow<'_, [(u8, u8, u8)]> {
     if mirror {
         let mut mirrored = colors.to_vec();
         mirrored.extend(colors.iter().rev());
-        mirrored
+        Cow::Owned(mirrored)
     } else {
-        colors.to_vec()
+        Cow::Borrowed(colors)
     }
 }
 

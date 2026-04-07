@@ -24,7 +24,7 @@ pub fn spawn_govee(args: &[&str], device_ip: Option<&str>) -> std::io::Result<Ch
 pub fn kill(child: &mut Child) {
     #[cfg(unix)]
     {
-        unsafe { libc::kill(child.id() as i32, libc::SIGTERM); }
+        unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM); }
     }
     #[cfg(not(unix))]
     {

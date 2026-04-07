@@ -28,6 +28,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             ]
             .align_y(Alignment::Center),
             slider(1u32..=30u32, app.config.screen.fps, Message::SetScreenFps)
+                .on_release(Message::SaveConfig)
                 .width(Length::Fill),
         ]
         .spacing(10),

@@ -50,6 +50,7 @@ pub enum Message {
     StartAmbient,
 
     ToggleMirror(bool),
+    SaveConfig,
 }
 
 pub struct App {
@@ -187,7 +188,6 @@ impl App {
             Message::SetBrightness(value) => {
                 self.brightness = value;
                 self.config.controls.brightness = value;
-                self.config.save();
                 if let Some(ref dev) = self.device {
                     let ip = dev.ip.clone();
                     return Task::perform(
@@ -201,7 +201,6 @@ impl App {
             Message::SetColor(r, g, b) => {
                 self.color = (r, g, b);
                 self.config.controls.color = [r, g, b];
-                self.config.save();
                 if let Some(ref dev) = self.device {
                     let ip = dev.ip.clone();
                     return Task::perform(
@@ -215,7 +214,6 @@ impl App {
             Message::SetColorTemp(kelvin) => {
                 self.color_temp = kelvin;
                 self.config.controls.color_temp = kelvin;
-                self.config.save();
                 if let Some(ref dev) = self.device {
                     let ip = dev.ip.clone();
                     return Task::perform(
@@ -302,13 +300,14 @@ impl App {
                     self.elapsed_secs = start.elapsed().as_secs();
                 }
             }
-            Message::SetScreenFps(v) => { self.config.screen.fps = v; self.config.save(); }
-            Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; self.config.save(); }
-            Message::SetScreenSegments(v) => { self.config.screen.segments = v; self.config.save(); }
+            Message::SetScreenFps(v) => { self.config.screen.fps = v; }
+            Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; }
+            Message::SetScreenSegments(v) => { self.config.screen.segments = v; }
             Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); }
-            Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; self.config.save(); }
-            Message::SetAudioSegments(v) => { self.config.audio.segments = v; self.config.save(); }
-            Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; self.config.save(); }
+            Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; }
+            Message::SetAudioSegments(v) => { self.config.audio.segments = v; }
+            Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; }
+            Message::SaveConfig => { self.config.save(); }
             Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); }
             Message::ToggleMirror(v) => {
                 self.mirror = v;

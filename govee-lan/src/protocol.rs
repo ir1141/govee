@@ -29,6 +29,13 @@ pub fn make_msg(cmd: &str, data: serde_json::Value) -> Vec<u8> {
 }
 
 pub fn udp_send(ip: &str, msg: &[u8]) -> std::io::Result<()> {
+    let addr = parse_device_addr(ip)?;
+    let sock = UdpSocket::bind("0.0.0.0:0")?;
+    sock.send_to(msg, addr)?;
+    Ok(())
+}
+
+fn parse_device_addr(ip: &str) -> std::io::Result<std::net::SocketAddr> {
     let addr: std::net::Ipv4Addr = ip.parse().map_err(|e| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, format!("Invalid IP: {e}"))
     })?;
@@ -38,9 +45,54 @@ pub fn udp_send(ip: &str, msg: &[u8]) -> std::io::Result<()> {
             "IP must be a unicast address",
         ));
     }
-    let sock = UdpSocket::bind("0.0.0.0:0")?;
-    sock.send_to(msg, (addr, CONTROL_PORT))?;
-    Ok(())
+    Ok(std::net::SocketAddr::from((addr, CONTROL_PORT)))
+}
+
+/// A reusable UDP sender that keeps a socket open across calls.
+/// Use this in hot loops (screen capture, audio, themes) to avoid
+/// creating a new socket per frame.
+pub struct UdpSender {
+    sock: UdpSocket,
+    addr: std::net::SocketAddr,
+}
+
+impl UdpSender {
+    pub fn new(ip: &str) -> std::io::Result<Self> {
+        let addr = parse_device_addr(ip)?;
+        let sock = UdpSocket::bind("0.0.0.0:0")?;
+        Ok(Self { sock, addr })
+    }
+
+    pub fn send(&self, msg: &[u8]) -> std::io::Result<()> {
+        self.sock.send_to(msg, self.addr)?;
+        Ok(())
+    }
+
+    pub fn send_segments(&self, colors: &[(u8, u8, u8)], gradient: bool) -> std::io::Result<()> {
+        if colors.len() > 255 {
+            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "too many segments (max 255)"));
+        }
+        let mut color_data: Vec<u8> = vec![if gradient { 1 } else { 0 }, colors.len() as u8];
+        for &(r, g, b) in colors {
+            color_data.extend_from_slice(&[r, g, b]);
+        }
+        let data_len = color_data.len();
+        let mut packet = vec![0xBB, (data_len >> 8) as u8, data_len as u8, 0xB0];
+        packet.extend_from_slice(&color_data);
+        packet.push(xor_checksum(&packet));
+        self.send(&razer_msg(&packet))
+    }
+
+    pub fn send_color(&self, r: u8, g: u8, b: u8) -> std::io::Result<()> {
+        let msg = make_msg(
+            "colorwc",
+            serde_json::json!({
+                "color": {"r": r, "g": g, "b": b},
+                "colorTemInKelvin": 0,
+            }),
+        );
+        self.send(&msg)
+    }
 }
 
 pub fn send_turn(ip: &str, on: bool) -> std::io::Result<()> {

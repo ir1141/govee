@@ -1,5 +1,6 @@
 use govee_themes::themes::{Rgb, PA, Behavior, Delay, ThemeKind, ThemeDef, palette_sample, lerp_rgb, hsv_to_rgb};
 use govee_lan::*;
+use govee_lan::UdpSender;
 use rand::RngExt;
 use std::time::Duration;
 
@@ -333,6 +334,7 @@ pub fn run_theme(
             }
         }
         ThemeKind::Animated { behavior, delay } => {
+            let sender = UdpSender::new(&ip).expect("Failed to create UDP sender");
             crate::dreamview::activate(&ip, brightness, true);
 
             {
@@ -355,7 +357,7 @@ pub fn run_theme(
 
                 let send_colors = crate::dreamview::apply_mirror(&colors, mirror);
 
-                let _ = send_segments(&ip, &send_colors, true);
+                let _ = sender.send_segments(&send_colors, true);
                 crate::ui::status_line(&send_colors, "");
 
                 let delay_ms = get_delay(delay, &mut rng);

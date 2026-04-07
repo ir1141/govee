@@ -3,7 +3,7 @@ use iced::{Alignment, Element, Length};
 use crate::app::Message;
 use crate::style;
 
-/// A labeled slider card with value display.
+/// A labeled slider card with value display. Saves config on release, not on every tick.
 pub fn slider_card<'a>(
     label: &'a str,
     value: u8,
@@ -24,7 +24,9 @@ pub fn slider_card<'a>(
                 text(display).size(14).color(style::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
-            slider(range, value, on_change).width(Length::Fill),
+            slider(range, value, on_change)
+                .on_release(Message::SaveConfig)
+                .width(Length::Fill),
         ]
         .spacing(10),
     )
@@ -46,7 +48,9 @@ pub fn segments_card<'a>(
                 text(format!("{value}")).size(14).color(style::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
-            slider(1u8..=15u8, value as u8, move |v| on_change(v as usize)).width(Length::Fill),
+            slider(1u8..=15u8, value as u8, move |v| on_change(v as usize))
+                .on_release(Message::SaveConfig)
+                .width(Length::Fill),
         ]
         .spacing(10),
     )

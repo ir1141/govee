@@ -90,6 +90,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             ]
             .align_y(Alignment::Center),
             slider(2000u16..=9000u16, app.color_temp, Message::SetColorTemp)
+                .on_release(Message::SaveConfig)
                 .width(Length::Fill),
             row![
                 text("2000K").size(11).color(style::TEXT_MUTED),

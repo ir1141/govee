@@ -1,5 +1,6 @@
 use govee_lan::*;
 use govee_lan::wayland::ScreenCapturer;
+use govee_lan::UdpSender;
 use std::process;
 use std::time::{Duration, Instant};
 
@@ -26,6 +27,8 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
     let use_razer = !args.no_dreamview;
     let n_seg = crate::dreamview::segment_count(use_razer, args.segments);
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);
+
+    let sender = UdpSender::new(&ip).expect("Failed to create UDP sender");
 
     crate::dreamview::activate(&ip, args.brightness, use_razer);
 
@@ -103,10 +106,10 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
         if any_changed || needs_keepalive {
             if use_razer {
                 let send_colors = crate::dreamview::apply_mirror(&current_colors, mirror);
-                let _ = send_segments(&ip, &send_colors, args.gradient);
+                let _ = sender.send_segments(&send_colors, args.gradient);
             } else {
                 let (r, g, b) = current_colors[0];
-                let _ = send_color(&ip, r, g, b);
+                let _ = sender.send_color(r, g, b);
             }
 
             last_send_time = Instant::now();
