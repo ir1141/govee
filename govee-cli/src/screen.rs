@@ -7,6 +7,25 @@ use std::time::{Duration, Instant};
 use crate::cli::ScreenArgs;
 use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
+/// Oversample multiplier: sample this many screen columns per hardware segment,
+/// then merge for finer color resolution within the device's segment limit.
+const OVERSAMPLE: usize = 4;
+
+/// Merge oversampled colors down to `n` segments by averaging adjacent groups.
+fn merge_segments(colors: &[(u8, u8, u8)], n: usize) -> Vec<(u8, u8, u8)> {
+    colors
+        .chunks(colors.len() / n.max(1))
+        .take(n)
+        .map(|chunk| {
+            let (r, g, b) = chunk.iter().fold((0u32, 0u32, 0u32), |(r, g, b), &(cr, cg, cb)| {
+                (r + cr as u32, g + cg as u32, b + cb as u32)
+            });
+            let len = chunk.len() as u32;
+            ((r / len) as u8, (g / len) as u8, (b / len) as u8)
+        })
+        .collect()
+}
+
 pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
     let mut capturer = match ScreenCapturer::new() {
         Ok(c) => c,
@@ -59,7 +78,7 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
 
     // Seed smoothed colors
     if let Ok(frame) = capturer.capture(args.output.as_deref()) {
-        let colors = frame.extract_edge_colors(n_seg);
+        let colors = merge_segments(&frame.extract_segment_colors(n_seg * OVERSAMPLE), n_seg);
         for (i, &(r, g, b)) in colors.iter().enumerate() {
             smoothed[i] = (r as f64, g as f64, b as f64);
         }
@@ -79,7 +98,7 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
             }
         };
 
-        let raw_colors = frame.extract_edge_colors(n_seg);
+        let raw_colors = merge_segments(&frame.extract_segment_colors(n_seg * OVERSAMPLE), n_seg);
         let mut any_changed = false;
         let mut current_colors = Vec::with_capacity(n_seg);
 

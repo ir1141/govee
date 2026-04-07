@@ -27,32 +27,64 @@ pub struct CapturedFrame {
 const SAMPLE_STEP: u32 = 4;
 
 impl CapturedFrame {
-    /// Average color from a rectangular region, subsampled for performance.
-    fn average_color(&self, x: u32, y: u32, w: u32, h: u32) -> (u8, u8, u8) {
+    /// Prominent color from a rectangular region using top-percentile luminance.
+    /// Samples pixels at SAMPLE_STEP intervals, builds a brightness histogram,
+    /// then averages only the top 20% brightest pixels so vivid content isn't
+    /// drowned out by large dark areas.
+    fn prominent_color(&self, x: u32, y: u32, w: u32, h: u32) -> (u8, u8, u8) {
         let bpp: u32 = 4;
-        let (mut r_sum, mut g_sum, mut b_sum) = (0u64, 0u64, 0u64);
-        let mut count = 0u64;
-
         let y_end = (y + h).min(self.height);
         let x_end = (x + w).min(self.width);
+
+        // Pass 1: collect subsampled pixels and build luminance histogram.
+        let mut pixels: Vec<(u8, u8, u8, u8)> = Vec::new(); // (r, g, b, lum)
+        let mut histogram = [0u32; 256];
 
         let mut row = y;
         while row < y_end {
             let mut col = x;
             while col < x_end {
                 let offset = (row * self.stride + col * bpp) as usize;
-                if offset + 3 >= self.data.len() {
-                    col += SAMPLE_STEP;
-                    continue;
+                if offset + 3 < self.data.len() {
+                    let b = self.data[offset];
+                    let g = self.data[offset + 1];
+                    let r = self.data[offset + 2];
+                    let lum =
+                        (0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32) as u8;
+                    pixels.push((r, g, b, lum));
+                    histogram[lum as usize] += 1;
                 }
-                b_sum += self.data[offset] as u64;
-                g_sum += self.data[offset + 1] as u64;
-                r_sum += self.data[offset + 2] as u64;
-                count += 1;
-
                 col += SAMPLE_STEP;
             }
             row += SAMPLE_STEP;
+        }
+
+        if pixels.is_empty() {
+            return (0, 0, 0);
+        }
+
+        // Find luminance cutoff for the top 20% of pixels.
+        let threshold_count = (pixels.len() as u32).div_ceil(5);
+        let mut cumulative = 0u32;
+        let mut cutoff: u8 = 0;
+        for bucket in (0..=255u8).rev() {
+            cumulative += histogram[bucket as usize];
+            if cumulative >= threshold_count {
+                cutoff = bucket;
+                break;
+            }
+        }
+
+        // Pass 2: average only pixels at or above the cutoff.
+        let (mut r_sum, mut g_sum, mut b_sum) = (0u64, 0u64, 0u64);
+        let mut count = 0u64;
+        for &(r, g, b, lum) in &pixels {
+            if lum >= cutoff {
+                r_sum += r as u64;
+                g_sum += g as u64;
+                b_sum += b as u64;
+                count += 1;
+            }
         }
 
         if count == 0 {
@@ -66,7 +98,7 @@ impl CapturedFrame {
     }
 
     /// Extract colors by sampling full-height vertical columns, split into N segments.
-    pub fn extract_edge_colors(&self, segments: usize) -> Vec<(u8, u8, u8)> {
+    pub fn extract_segment_colors(&self, segments: usize) -> Vec<(u8, u8, u8)> {
         let segments = segments.max(1);
         let seg_w = self.width / segments as u32;
 
@@ -78,7 +110,7 @@ impl CapturedFrame {
                 } else {
                     (i as u32 + 1) * seg_w
                 };
-                self.average_color(x0, 0, x1 - x0, self.height)
+                self.prominent_color(x0, 0, x1 - x0, self.height)
             })
             .collect()
     }
