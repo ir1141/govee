@@ -28,17 +28,16 @@ const SAMPLE_STEP: u32 = 4;
 
 impl CapturedFrame {
     /// Prominent color from a rectangular region using top-percentile luminance.
-    /// Samples pixels at SAMPLE_STEP intervals, builds a brightness histogram,
-    /// then averages only the top 20% brightest pixels so vivid content isn't
-    /// drowned out by large dark areas.
+    /// Two passes over the frame buffer directly (no allocation): first builds a
+    /// brightness histogram, then averages only the top 20% brightest pixels.
     fn prominent_color(&self, x: u32, y: u32, w: u32, h: u32) -> (u8, u8, u8) {
         let bpp: u32 = 4;
         let y_end = (y + h).min(self.height);
         let x_end = (x + w).min(self.width);
 
-        // Pass 1: collect subsampled pixels and build luminance histogram.
-        let mut pixels: Vec<(u8, u8, u8, u8)> = Vec::new(); // (r, g, b, lum)
+        // Pass 1: build luminance histogram and count total pixels.
         let mut histogram = [0u32; 256];
+        let mut total = 0u32;
 
         let mut row = y;
         while row < y_end {
@@ -49,22 +48,21 @@ impl CapturedFrame {
                     let b = self.data[offset];
                     let g = self.data[offset + 1];
                     let r = self.data[offset + 2];
-                    let lum =
-                        (0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32) as u8;
-                    pixels.push((r, g, b, lum));
+                    let lum = ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as u8;
                     histogram[lum as usize] += 1;
+                    total += 1;
                 }
                 col += SAMPLE_STEP;
             }
             row += SAMPLE_STEP;
         }
 
-        if pixels.is_empty() {
+        if total == 0 {
             return (0, 0, 0);
         }
 
         // Find luminance cutoff for the top 20% of pixels.
-        let threshold_count = (pixels.len() as u32).div_ceil(5);
+        let threshold_count = total.div_ceil(5);
         let mut cumulative = 0u32;
         let mut cutoff: u8 = 0;
         for bucket in (0..=255u8).rev() {
@@ -75,16 +73,30 @@ impl CapturedFrame {
             }
         }
 
-        // Pass 2: average only pixels at or above the cutoff.
+        // Pass 2: re-scan and average only pixels at or above the cutoff.
         let (mut r_sum, mut g_sum, mut b_sum) = (0u64, 0u64, 0u64);
         let mut count = 0u64;
-        for &(r, g, b, lum) in &pixels {
-            if lum >= cutoff {
-                r_sum += r as u64;
-                g_sum += g as u64;
-                b_sum += b as u64;
-                count += 1;
+
+        let mut row = y;
+        while row < y_end {
+            let mut col = x;
+            while col < x_end {
+                let offset = (row * self.stride + col * bpp) as usize;
+                if offset + 3 < self.data.len() {
+                    let b = self.data[offset];
+                    let g = self.data[offset + 1];
+                    let r = self.data[offset + 2];
+                    let lum = ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as u8;
+                    if lum >= cutoff {
+                        r_sum += r as u64;
+                        g_sum += g as u64;
+                        b_sum += b as u64;
+                        count += 1;
+                    }
+                }
+                col += SAMPLE_STEP;
             }
+            row += SAMPLE_STEP;
         }
 
         if count == 0 {
