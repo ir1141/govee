@@ -8,7 +8,7 @@ fn config_path() -> PathBuf {
         .join("gui.toml")
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GuiConfig {
     #[serde(default)]
     pub general: GeneralConfig,
@@ -131,17 +131,6 @@ impl Default for AmbientConfig {
     }
 }
 
-impl Default for GuiConfig {
-    fn default() -> Self {
-        Self {
-            general: GeneralConfig::default(),
-            controls: ControlsConfig::default(),
-            screen: ScreenConfig::default(),
-            audio: AudioConfig::default(),
-            ambient: AmbientConfig::default(),
-        }
-    }
-}
 
 impl GuiConfig {
     pub fn load() -> Self {

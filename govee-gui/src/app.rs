@@ -137,7 +137,11 @@ impl App {
             subprocess_start: None,
         };
         let init_task = Task::perform(
-            async { govee_lan::scan_devices(Duration::from_secs(2)) },
+            async {
+                tokio::task::spawn_blocking(|| govee_lan::scan_devices(Duration::from_secs(2)))
+                    .await
+                    .unwrap_or_default()
+            },
             Message::DevicesDiscovered,
         );
         (app, init_task)
@@ -225,7 +229,11 @@ impl App {
             Message::DeviceCommandDone => {}
             Message::DiscoveryTick => {
                 return Task::perform(
-                    async { govee_lan::scan_devices(Duration::from_secs(2)) },
+                    async {
+                        tokio::task::spawn_blocking(|| govee_lan::scan_devices(Duration::from_secs(2)))
+                            .await
+                            .unwrap_or_default()
+                    },
                     Message::DevicesDiscovered,
                 );
             }

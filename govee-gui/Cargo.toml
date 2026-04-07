@@ -10,7 +10,7 @@ name = "govee-gui"
 path = "src/main.rs"
 
 [dependencies]
-govee-lan = { path = "../govee-lan" }
+govee-lan = { path = "../govee-lan", default-features = false }
 govee-themes = { path = "../govee-themes" }
 iced = { version = "0.13", features = ["tokio"] }
 tokio = { version = "1", features = ["process", "time"] }

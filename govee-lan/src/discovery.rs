@@ -30,7 +30,10 @@ pub fn scan_devices(timeout: Duration) -> Vec<DeviceInfo> {
         Ok(sock.into())
     })() {
         Ok(s) => s,
-        Err(_) => return devices,
+        Err(e) => {
+            eprintln!("govee: failed to bind discovery port {RESPONSE_PORT}: {e}");
+            return devices;
+        }
     };
 
     let multicast: Ipv4Addr = MULTICAST_GROUP.parse().unwrap();
@@ -57,7 +60,10 @@ pub fn scan_devices(timeout: Duration) -> Vec<DeviceInfo> {
                 if let Ok(text) = std::str::from_utf8(&buf[..n]) {
                     if let Ok(resp) = serde_json::from_str::<GoveeMsg>(text) {
                         if let Ok(info) = serde_json::from_value::<DeviceInfo>(resp.msg.data) {
-                            if !info.ip.is_empty() && info.ip.parse::<Ipv4Addr>().is_ok() {
+                            if !info.ip.is_empty()
+                                && info.ip.parse::<Ipv4Addr>().is_ok()
+                                && !devices.iter().any(|d| d.ip == info.ip)
+                            {
                                 devices.push(info);
                             }
                         }

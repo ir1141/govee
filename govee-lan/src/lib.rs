@@ -1,8 +1,11 @@
 pub mod protocol;
 pub mod discovery;
-pub mod wayland;
-pub mod audio;
 pub mod colors;
+
+#[cfg(feature = "screen")]
+pub mod wayland;
+#[cfg(feature = "audio")]
+pub mod audio;
 // Public API re-exports
 pub use protocol::{
     send_turn, send_brightness, send_color, send_color_temp, send_command,

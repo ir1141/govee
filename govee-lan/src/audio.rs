@@ -257,7 +257,9 @@ fn capture_loop(
         channels: 1,
         rate: SAMPLE_RATE,
     };
-    assert!(spec.is_valid());
+    if !spec.is_valid() {
+        anyhow::bail!("Invalid PulseAudio sample spec (44100Hz mono f32)");
+    }
 
     let mut stream = Stream::new(&mut context, "govee-capture", &spec, None)
         .ok_or_else(|| anyhow::anyhow!("Failed to create PA stream"))?;
