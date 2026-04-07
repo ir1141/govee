@@ -28,22 +28,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .spacing(10)
     .align_y(Alignment::Center);
 
-    // Brightness card
-    let brightness_card = container(
-        column![
-            row![
-                text("Brightness").size(14).color(style::TEXT_PRIMARY),
-                horizontal_space(),
-                text(format!("{}%", app.brightness)).size(14).color(style::TEXT_SECONDARY),
-            ]
-            .align_y(Alignment::Center),
-            slider(1u8..=100u8, app.brightness, Message::SetBrightness)
-                .width(Length::Fill),
-        ]
-        .spacing(10),
-    )
-    .padding([16, 18])
-    .style(style::card_style);
+    let brightness_card = crate::widgets::slider_card::slider_card(
+        "Brightness", app.brightness, "%", 1..=100, Message::SetBrightness,
+    );
 
     // Color card
     let color_swatch = container(text(""))

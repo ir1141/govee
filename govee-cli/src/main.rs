@@ -189,7 +189,7 @@ fn main() {
             ui::info("Reset", &format!("{}", "on · 100% · 4000K warm white".dimmed()));
         }
         Command::Theme { name, brightness, segments } => {
-            themes::run_theme(&name.to_lowercase(), ip, brightness, segments, cli.mirror, cli.debug);
+            themes::run_theme(&name.to_lowercase(), ip, brightness, segments, cli.mirror);
         }
         Command::Ambient(args) => ambient::run_ambient(args, ip),
         Command::Screen(args) => screen::run_screen(args, ip, cli.mirror),

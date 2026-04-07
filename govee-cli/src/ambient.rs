@@ -1,11 +1,11 @@
-use govee_lan::*;
+use govee_lan::{hex_to_rgb, send_brightness, send_color};
 use inotify::{Inotify, WatchMask};
 use std::path::PathBuf;
 use std::process;
 use std::time::Duration;
 
 use crate::cli::AmbientArgs;
-use crate::{RUNNING, SCAN_TIMEOUT, ctrlc_setup};
+use crate::{RUNNING, ctrlc_setup};
 
 pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
     let valid_colors = [
@@ -24,21 +24,7 @@ pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
         process::exit(1);
     }
 
-    if ip.is_none() {
-        crate::ui::discovery_scanning();
-    }
-    let ip = match resolve_ip(ip.as_deref(), SCAN_TIMEOUT) {
-        Ok(resolved) => {
-            if ip.is_none() {
-                crate::ui::discovery_found("device", &resolved);
-            }
-            resolved
-        }
-        Err(_) => {
-            crate::ui::error_hint("No device found", "Is the strip powered on and connected to WiFi?");
-            process::exit(1);
-        }
-    };
+    let ip = crate::resolve_or_exit(ip.as_deref());
 
     ctrlc_setup();
 

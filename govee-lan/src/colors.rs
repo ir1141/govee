@@ -24,6 +24,24 @@ pub fn smooth(current: (f64, f64, f64), target: (u8, u8, u8), factor: f64) -> (f
     )
 }
 
+/// Interpolate through evenly-spaced anchor colors. `t` is 0.0–1.0.
+pub fn lerp_color_chain(anchors: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
+    if anchors.is_empty() { return (0, 0, 0); }
+    if anchors.len() == 1 { return anchors[0]; }
+    let t = t.clamp(0.0, 1.0);
+    let n = anchors.len() - 1;
+    let pos = t * n as f64;
+    let idx = (pos as usize).min(n - 1);
+    let frac = pos - idx as f64;
+    let (r1, g1, b1) = anchors[idx];
+    let (r2, g2, b2) = anchors[idx + 1];
+    (
+        (r1 as f64 + (r2 as f64 - r1 as f64) * frac).clamp(0.0, 255.0) as u8,
+        (g1 as f64 + (g2 as f64 - g1 as f64) * frac).clamp(0.0, 255.0) as u8,
+        (b1 as f64 + (b2 as f64 - b1 as f64) * frac).clamp(0.0, 255.0) as u8,
+    )
+}
+
 pub fn saturate_color(rgb: (u8, u8, u8), amount: f64) -> (u8, u8, u8) {
     let avg = (rgb.0 as f64 + rgb.1 as f64 + rgb.2 as f64) / 3.0;
     let r = (avg + (rgb.0 as f64 - avg) * amount).clamp(0.0, 255.0) as u8;

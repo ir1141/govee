@@ -304,7 +304,6 @@ pub fn run_theme(
     brightness: u8,
     segments: usize,
     mirror: bool,
-    _debug: bool,
 ) {
     let theme = match get_theme(name) {
         Some(t) => t,

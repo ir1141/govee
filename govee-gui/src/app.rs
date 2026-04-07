@@ -72,6 +72,35 @@ pub struct App {
 }
 
 impl App {
+    /// Kill the current subprocess and clear associated state.
+    fn stop_subprocess(&mut self) {
+        if let Some(ref mut child) = self.subprocess {
+            crate::subprocess::kill(child);
+        }
+        self.subprocess = None;
+        self.active_theme = None;
+        self.active_mode = None;
+        self.subprocess_start = None;
+        self.elapsed_secs = 0;
+    }
+
+    /// Spawn a govee CLI subprocess for a continuous mode.
+    fn start_subprocess(&mut self, mode: &str, args: Vec<String>) {
+        self.stop_subprocess();
+        if let Some(ref dev) = self.device {
+            let mut args = args;
+            if self.mirror { args.push("--mirror".into()); }
+            let ip = dev.ip.clone();
+            let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+            if let Ok(child) = crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
+                self.subprocess = Some(child);
+                self.active_mode = Some(mode.into());
+                self.subprocess_start = Some(std::time::Instant::now());
+                self.elapsed_secs = 0;
+            }
+        }
+    }
+
     pub fn new() -> (Self, Task<Message>) {
         let config = GuiConfig::load();
         let page = match config.general.last_page.as_str() {
@@ -224,10 +253,7 @@ impl App {
                 }
             }
             Message::ApplyTheme(name) => {
-                if let Some(ref mut child) = self.subprocess {
-                    crate::subprocess::kill(child);
-                    self.subprocess = None;
-                }
+                self.stop_subprocess();
                 let theme = self.themes.iter().find(|t| t.name == name).cloned();
                 if let (Some(theme), Some(ref dev)) = (theme, &self.device) {
                     match &theme.kind {
@@ -244,30 +270,21 @@ impl App {
                         }
                         ThemeKind::Animated { .. } => {
                             let ip = dev.ip.clone();
-                            let mut args = vec!["theme", &name];
-                            if self.mirror { args.push("--mirror"); }
-                            match crate::subprocess::spawn_govee(&args, Some(&ip)) {
-                                Ok(child) => {
-                                    self.subprocess = Some(child);
-                                    self.active_theme = Some(name);
-                                    self.subprocess_start = Some(std::time::Instant::now());
-                                    self.elapsed_secs = 0;
-                                }
-                                Err(_) => {}
+                            let mut args = vec!["theme".to_string(), name.clone()];
+                            if self.mirror { args.push("--mirror".into()); }
+                            let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                            if let Ok(child) = crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
+                                self.subprocess = Some(child);
+                                self.active_theme = Some(name);
+                                self.subprocess_start = Some(std::time::Instant::now());
+                                self.elapsed_secs = 0;
                             }
                         }
                     }
                 }
             }
             Message::StopMode => {
-                if let Some(ref mut child) = self.subprocess {
-                    crate::subprocess::kill(child);
-                }
-                self.subprocess = None;
-                self.active_theme = None;
-                self.active_mode = None;
-                self.subprocess_start = None;
-                self.elapsed_secs = 0;
+                self.stop_subprocess();
             }
             Message::ThemeFilterChanged(filter) => {
                 self.theme_filter = filter;
@@ -292,86 +309,31 @@ impl App {
                 self.config.save();
             }
             Message::StartScreen => {
-                if let Some(ref mut child) = self.subprocess {
-                    crate::subprocess::kill(child);
-                }
-                self.subprocess = None;
-                self.active_theme = None;
-                if let Some(ref dev) = self.device {
-                    let s = &self.config.screen;
-                    let mut args: Vec<String> = vec![
-                        "screen".into(),
-                        "--fps".into(), s.fps.to_string(),
-                        "--brightness".into(), s.brightness.to_string(),
-                        "--segments".into(), s.segments.to_string(),
-                    ];
-                    if self.mirror { args.push("--mirror".into()); }
-                    let ip = dev.ip.clone();
-                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
-                        Ok(child) => {
-                            self.subprocess = Some(child);
-                            self.active_mode = Some("screen".into());
-                            self.subprocess_start = Some(std::time::Instant::now());
-                            self.elapsed_secs = 0;
-                        }
-                        Err(_) => {}
-                    }
-                }
+                let s = &self.config.screen;
+                self.start_subprocess("screen", vec![
+                    "screen".into(),
+                    "--fps".into(), s.fps.to_string(),
+                    "--brightness".into(), s.brightness.to_string(),
+                    "--segments".into(), s.segments.to_string(),
+                ]);
             }
             Message::StartAudio => {
-                if let Some(ref mut child) = self.subprocess {
-                    crate::subprocess::kill(child);
-                }
-                self.subprocess = None;
-                self.active_theme = None;
-                if let Some(ref dev) = self.device {
-                    let a = &self.config.audio;
-                    let mut args: Vec<String> = vec![
-                        "audio".into(),
-                        "--mode".into(), a.mode.clone(),
-                        "--brightness".into(), a.brightness.to_string(),
-                        "--segments".into(), a.segments.to_string(),
-                    ];
-                    if self.mirror { args.push("--mirror".into()); }
-                    let ip = dev.ip.clone();
-                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
-                        Ok(child) => {
-                            self.subprocess = Some(child);
-                            self.active_mode = Some("audio".into());
-                            self.subprocess_start = Some(std::time::Instant::now());
-                            self.elapsed_secs = 0;
-                        }
-                        Err(_) => {}
-                    }
-                }
+                let a = &self.config.audio;
+                self.start_subprocess("audio", vec![
+                    "audio".into(),
+                    "--mode".into(), a.mode.clone(),
+                    "--brightness".into(), a.brightness.to_string(),
+                    "--segments".into(), a.segments.to_string(),
+                ]);
             }
             Message::StartAmbient => {
-                if let Some(ref mut child) = self.subprocess {
-                    crate::subprocess::kill(child);
-                }
-                self.subprocess = None;
-                self.active_theme = None;
-                if let Some(ref dev) = self.device {
-                    let amb = &self.config.ambient;
-                    let mut args: Vec<String> = vec![
-                        "ambient".into(),
-                        "--brightness".into(), amb.brightness.to_string(),
-                    ];
-                    if amb.dim { args.push("--dim".into()); }
-                    let ip = dev.ip.clone();
-                    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                    match crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
-                        Ok(child) => {
-                            self.subprocess = Some(child);
-                            self.active_mode = Some("ambient".into());
-                            self.subprocess_start = Some(std::time::Instant::now());
-                            self.elapsed_secs = 0;
-                        }
-                        Err(_) => {}
-                    }
-                }
+                let amb = &self.config.ambient;
+                let mut args = vec![
+                    "ambient".into(),
+                    "--brightness".into(), amb.brightness.to_string(),
+                ];
+                if amb.dim { args.push("--dim".into()); }
+                self.start_subprocess("ambient", args);
             }
         }
         Task::none()

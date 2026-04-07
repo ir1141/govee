@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Instant;
 
 /// Which visualization mode to use
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy)]
 pub enum VisMode {
     Energy,
     Frequency,
@@ -21,7 +21,7 @@ pub enum VisMode {
 }
 
 /// Color palette for visualization
-#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+#[derive(Debug, Clone, Copy)]
 pub enum Palette {
     Fire,
     Ocean,
@@ -58,7 +58,6 @@ impl Default for AudioState {
 
 /// Interpolate through palette anchor colors based on intensity (0.0-1.0)
 pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
-    let t = intensity.clamp(0.0, 1.0);
     let anchors: &[(u8, u8, u8)] = match palette {
         Palette::Fire => &[
             (0, 0, 0),
@@ -111,17 +110,7 @@ pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
             (148, 0, 211),
         ],
     };
-    let n = anchors.len() - 1;
-    let pos = t * n as f64;
-    let idx = (pos as usize).min(n - 1);
-    let frac = pos - idx as f64;
-    let (r1, g1, b1) = anchors[idx];
-    let (r2, g2, b2) = anchors[idx + 1];
-    (
-        (r1 as f64 + (r2 as f64 - r1 as f64) * frac).clamp(0.0, 255.0) as u8,
-        (g1 as f64 + (g2 as f64 - g1 as f64) * frac).clamp(0.0, 255.0) as u8,
-        (b1 as f64 + (b2 as f64 - b1 as f64) * frac).clamp(0.0, 255.0) as u8,
-    )
+    crate::colors::lerp_color_chain(anchors, intensity)
 }
 
 const SAMPLE_RATE: u32 = 44100;

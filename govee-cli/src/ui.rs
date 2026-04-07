@@ -60,12 +60,7 @@ pub fn color_swatch(r: u8, g: u8, b: u8) -> String {
 }
 
 pub fn color_swatch_full(r: u8, g: u8, b: u8) -> String {
-    format!(
-        "{} {} {}",
-        "██".truecolor(r, g, b),
-        format!("#{r:02X}{g:02X}{b:02X}").dimmed(),
-        format!("({r}, {g}, {b})").dimmed()
-    )
+    format!("{} {}", color_swatch(r, g, b), format!("({r}, {g}, {b})").dimmed())
 }
 
 // ── Segment blocks ─────────────────────────────────────────────────────────

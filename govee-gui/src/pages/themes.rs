@@ -5,15 +5,25 @@ use govee_themes::ThemeKind;
 use crate::app::{App, Message};
 use crate::style;
 
-const CATEGORIES: &[&str] = &["all", "static", "nature", "vibes", "functional", "seasonal", "custom"];
+fn rgb_color(r: u8, g: u8, b: u8) -> Color {
+    Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+}
+
+fn categories() -> Vec<&'static str> {
+    let mut cats = vec!["all"];
+    cats.extend_from_slice(govee_themes::BUILTIN_CATEGORIES);
+    cats.push("custom");
+    cats
+}
 const CARD_WIDTH: f32 = 150.0;
 const COLOR_BAND_HEIGHT: f32 = 36.0;
 const CARDS_PER_ROW: usize = 4;
 
 pub fn view(app: &App) -> Element<'_, Message> {
     // ── Header row ─────────────────────────────────────────────────────────
+    let categories = categories();
     let mut tab_row = row![].spacing(6);
-    for &cat in CATEGORIES {
+    for &cat in &categories {
         let is_active = app.theme_filter == cat;
         let btn = button(text(cat).size(12))
             .padding([6, 14])
@@ -124,49 +134,49 @@ fn extract_preview_colors(behavior: &govee_themes::Behavior) -> Vec<Color> {
         | Behavior::Progression { palette, .. } => {
             (0..4).map(|i| {
                 let (r, g, b) = palette_sample(palette, i as f64 / 3.0);
-                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+                rgb_color(r, g, b)
             }).collect()
         }
         Behavior::Flash { base_palette, .. } => {
             (0..4).map(|i| {
                 let (r, g, b) = palette_sample(base_palette, i as f64 / 3.0);
-                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+                rgb_color(r, g, b)
             }).collect()
         }
         Behavior::Particles { bg, palette, .. } => {
-            let mut colors = vec![Color::from_rgb(bg.0 as f32 / 255.0, bg.1 as f32 / 255.0, bg.2 as f32 / 255.0)];
+            let mut colors = vec![rgb_color(bg.0, bg.1, bg.2)];
             for i in 0..3 {
                 let (r, g, b) = palette_sample(palette, i as f64 / 2.0);
-                colors.push(Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0));
+                colors.push(rgb_color(r, g, b));
             }
             colors
         }
         Behavior::Twinkle { bg, colors, .. } => {
-            let mut out = vec![Color::from_rgb(bg.0 as f32 / 255.0, bg.1 as f32 / 255.0, bg.2 as f32 / 255.0)];
+            let mut out = vec![rgb_color(bg.0, bg.1, bg.2)];
             for &(r, g, b) in colors.iter().take(3) {
-                out.push(Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0));
+                out.push(rgb_color(r, g, b));
             }
             out
         }
         Behavior::GradientWave { color_a, color_b, .. } => {
             vec![
-                Color::from_rgb(color_a.0 as f32 / 255.0, color_a.1 as f32 / 255.0, color_a.2 as f32 / 255.0),
-                Color::from_rgb(color_b.0 as f32 / 255.0, color_b.1 as f32 / 255.0, color_b.2 as f32 / 255.0),
+                rgb_color(color_a.0, color_a.1, color_a.2),
+                rgb_color(color_b.0, color_b.1, color_b.2),
             ]
         }
         Behavior::Strobe { colors, .. } | Behavior::Alternating { colors, .. } => {
             colors.iter().take(4).map(|&(r, g, b)| {
-                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+                rgb_color(r, g, b)
             }).collect()
         }
         Behavior::HueRotate { saturation, value, .. } => {
             (0..4).map(|i| {
                 let (r, g, b) = govee_themes::themes::hsv_to_rgb(i as f64 / 4.0, *saturation, *value);
-                Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
+                rgb_color(r, g, b)
             }).collect()
         }
         Behavior::RadiatePulse { color, .. } => {
-            vec![Color::from_rgb(color.0 as f32 / 255.0, color.1 as f32 / 255.0, color.2 as f32 / 255.0)]
+            vec![rgb_color(color.0, color.1, color.2)]
         }
     }
 }
@@ -178,7 +188,7 @@ fn theme_card<'a>(theme: &govee_themes::ThemeDef, is_active: bool) -> Element<'a
     let band: Element<'a, Message> = match &theme.kind {
         ThemeKind::Solid { color } => {
             let (r, g, b) = *color;
-            let c = Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0);
+            let c = rgb_color(r, g, b);
             container(iced::widget::Space::new(Length::Fill, COLOR_BAND_HEIGHT))
                 .width(Length::Fill)
                 .style(move |_theme| container::Style {

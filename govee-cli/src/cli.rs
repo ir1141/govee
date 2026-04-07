@@ -1,5 +1,39 @@
 use clap::{Args, Parser, Subcommand};
-use govee_lan::audio::{Palette, VisMode};
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum CliVisMode {
+    Energy, Frequency, Beat, Drop,
+}
+
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum CliPalette {
+    Fire, Ocean, Forest, Neon, Ice, Sunset, Rainbow,
+}
+
+impl From<CliVisMode> for govee_lan::audio::VisMode {
+    fn from(m: CliVisMode) -> Self {
+        match m {
+            CliVisMode::Energy => Self::Energy,
+            CliVisMode::Frequency => Self::Frequency,
+            CliVisMode::Beat => Self::Beat,
+            CliVisMode::Drop => Self::Drop,
+        }
+    }
+}
+
+impl From<CliPalette> for govee_lan::audio::Palette {
+    fn from(p: CliPalette) -> Self {
+        match p {
+            CliPalette::Fire => Self::Fire,
+            CliPalette::Ocean => Self::Ocean,
+            CliPalette::Forest => Self::Forest,
+            CliPalette::Neon => Self::Neon,
+            CliPalette::Ice => Self::Ice,
+            CliPalette::Sunset => Self::Sunset,
+            CliPalette::Rainbow => Self::Rainbow,
+        }
+    }
+}
 
 use crate::themes;
 
@@ -153,10 +187,10 @@ pub struct ScreenArgs {
 #[derive(Args)]
 pub struct AudioArgs {
     #[arg(long, default_value = "energy", help = "Visualization mode")]
-    pub mode: VisMode,
+    pub mode: CliVisMode,
 
     #[arg(long, default_value = "fire", help = "Color palette")]
-    pub palette: Palette,
+    pub palette: CliPalette,
 
     #[arg(long, default_value_t = 80, help = "Strip brightness 1-100")]
     pub brightness: u8,

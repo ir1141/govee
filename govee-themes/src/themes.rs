@@ -53,11 +53,7 @@ pub fn palette_sample(anchors: &[PA], t: f64) -> Rgb {
             } else {
                 ((t - a.pos) / (b.pos - a.pos)).clamp(0.0, 1.0)
             };
-            return (
-                (a.r as f64 + (b.r as f64 - a.r as f64) * f) as u8,
-                (a.g as f64 + (b.g as f64 - a.g as f64) * f) as u8,
-                (a.b as f64 + (b.b as f64 - a.b as f64) * f) as u8,
-            );
+            return lerp_rgb((a.r, a.g, a.b), (b.r, b.g, b.b), f);
         }
     }
     let l = anchors.last().unwrap();

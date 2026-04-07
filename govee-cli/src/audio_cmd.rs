@@ -63,8 +63,8 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
 
         let raw_colors = map_colors(
             &audio,
-            args.mode,
-            args.palette,
+            args.mode.into(),
+            args.palette.into(),
             n_seg,
             t,
             &mut beat_hue,
