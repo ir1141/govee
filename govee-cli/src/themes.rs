@@ -1,4 +1,4 @@
-use govee_lan::themes::{Rgb, PA, Behavior, Delay, ThemeKind, ThemeDef, palette_sample, lerp_rgb, hsv_to_rgb};
+use govee_themes::themes::{Rgb, PA, Behavior, Delay, ThemeKind, ThemeDef, palette_sample, lerp_rgb, hsv_to_rgb};
 use govee_lan::*;
 use rand::RngExt;
 use std::time::Duration;
@@ -8,13 +8,13 @@ use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 // ── Theme registry ──────────────────────────────────────────────────────────
 
 pub fn get_theme(name: &str) -> Option<ThemeDef> {
-    govee_lan::load_all_themes()
+    govee_themes::load_all_themes()
         .into_iter()
         .find(|t| t.name == name)
 }
 
 pub fn theme_list_display() -> String {
-    let themes = govee_lan::load_all_themes();
+    let themes = govee_themes::load_all_themes();
     let pairs: Vec<(&str, &str)> = themes.iter().map(|t| (t.name.as_str(), t.category.as_str())).collect();
     crate::ui::theme_list_help(&pairs)
 }
@@ -103,7 +103,7 @@ fn render_heat(
     state[..n_seg].iter().map(|&h| palette_sample(palette, h)).collect()
 }
 
-fn render_wave(palette: &[PA], waves: &[govee_lan::themes::WaveParam], weights: &[f64], n_seg: usize, t: f64) -> Vec<Rgb> {
+fn render_wave(palette: &[PA], waves: &[govee_themes::themes::WaveParam], weights: &[f64], n_seg: usize, t: f64) -> Vec<Rgb> {
     (0..n_seg)
         .map(|i| {
             let mut val = 0.0;

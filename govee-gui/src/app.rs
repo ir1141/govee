@@ -1,4 +1,5 @@
 use govee_lan::DeviceInfo;
+use govee_themes::{ThemeDef, ThemeKind, load_all_themes};
 use iced::widget::{column, container, row};
 use iced::{Element, Length, Task};
 use std::time::Duration;
@@ -60,7 +61,7 @@ pub struct App {
     pub brightness: u8,
     pub color: (u8, u8, u8),
     pub color_temp: u16,
-    pub themes: Vec<govee_lan::ThemeDef>,
+    pub themes: Vec<ThemeDef>,
     pub active_theme: Option<String>,
     pub subprocess: Option<std::process::Child>,
     pub theme_filter: String,
@@ -97,7 +98,7 @@ impl App {
             brightness,
             color,
             color_temp,
-            themes: govee_lan::load_all_themes(),
+            themes: load_all_themes(),
             active_theme: None,
             subprocess: None,
             theme_filter: "all".into(),
@@ -230,7 +231,7 @@ impl App {
                 let theme = self.themes.iter().find(|t| t.name == name).cloned();
                 if let (Some(theme), Some(ref dev)) = (theme, &self.device) {
                     match &theme.kind {
-                        govee_lan::ThemeKind::Solid { color } => {
+                        ThemeKind::Solid { color } => {
                             let ip = dev.ip.clone();
                             let (r, g, b) = *color;
                             self.active_theme = Some(name);
@@ -241,7 +242,7 @@ impl App {
                                 |_| Message::DeviceCommandDone,
                             );
                         }
-                        govee_lan::ThemeKind::Animated { .. } => {
+                        ThemeKind::Animated { .. } => {
                             let ip = dev.ip.clone();
                             let mut args = vec!["theme", &name];
                             if self.mirror { args.push("--mirror"); }

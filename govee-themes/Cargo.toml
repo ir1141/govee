@@ -1,0 +1,11 @@
+[package]
+name = "govee-themes"
+version = "0.1.0"
+edition = "2021"
+description = "Theme engine for Govee LED strip lights"
+license = "MIT"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+dirs = "6.0.0"

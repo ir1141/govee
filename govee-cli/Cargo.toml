@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 govee-lan = { path = "../govee-lan" }
+govee-themes = { path = "../govee-themes" }
 clap = { version = "4", features = ["derive"] }
 inotify = "0.11"
 nix = { version = "0.29", features = ["fs", "mman", "poll"] }

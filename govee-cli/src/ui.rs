@@ -133,7 +133,7 @@ fn category_label(category: &str) -> &str {
 /// Returns theme list as a string for clap help text.
 /// Uses ANSI colors — `colored` auto-disables when not a TTY.
 pub fn theme_list_help(themes: &[(&str, &str)]) -> String {
-    let mut categories: Vec<&str> = govee_lan::BUILTIN_CATEGORIES.to_vec();
+    let mut categories: Vec<&str> = govee_themes::BUILTIN_CATEGORIES.to_vec();
     for &(_, cat) in themes {
         if !categories.contains(&cat) {
             categories.push(cat);

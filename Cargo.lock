@@ -1430,6 +1430,7 @@ dependencies = [
  "ctrlc",
  "dirs 6.0.0",
  "govee-lan",
+ "govee-themes",
  "inotify",
  "nix 0.29.0",
  "rand 0.10.0",
@@ -1444,6 +1445,7 @@ version = "0.1.0"
 dependencies = [
  "dirs 6.0.0",
  "govee-lan",
+ "govee-themes",
  "iced",
  "libc",
  "serde",
@@ -1470,6 +1472,15 @@ dependencies = [
  "wayland-client",
  "wayland-protocols",
  "wayland-protocols-wlr",
+]
+
+[[package]]
+name = "govee-themes"
+version = "0.1.0"
+dependencies = [
+ "dirs 6.0.0",
+ "serde",
+ "toml",
 ]
 
 [[package]]

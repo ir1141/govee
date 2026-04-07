@@ -1,7 +1,7 @@
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
 use iced::{Border, Color, Element, Length, Shadow, Vector};
 use iced::widget::Row;
-use govee_lan::ThemeKind;
+use govee_themes::ThemeKind;
 use crate::app::{App, Message};
 use crate::style;
 
@@ -44,10 +44,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let mut content_col = column![].spacing(16);
 
     // ── Determine which categories to show ─────────────────────────────────
-    let is_custom = |c: &str| !govee_lan::BUILTIN_CATEGORIES.contains(&c);
+    let is_custom = |c: &str| !govee_themes::BUILTIN_CATEGORIES.contains(&c);
 
     let display_cats: Vec<String> = if app.theme_filter == "all" {
-        let mut cats: Vec<String> = govee_lan::BUILTIN_CATEGORIES.iter().map(|s: &&str| s.to_string()).collect();
+        let mut cats: Vec<String> = govee_themes::BUILTIN_CATEGORIES.iter().map(|s: &&str| s.to_string()).collect();
         for t in &app.themes {
             if is_custom(&t.category) && !cats.iter().any(|c| c == &t.category) {
                 cats.push(t.category.clone());
@@ -68,7 +68,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     // ── Build card grid per category ────────────────────────────────────────
     for cat in display_cats.iter() {
-        let cat_themes: Vec<&govee_lan::ThemeDef> = app
+        let cat_themes: Vec<&govee_themes::ThemeDef> = app
             .themes
             .iter()
             .filter(|t| t.category == cat.as_str())
@@ -112,9 +112,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .into()
 }
 
-fn extract_preview_colors(behavior: &govee_lan::Behavior) -> Vec<Color> {
-    use govee_lan::themes::palette_sample;
-    use govee_lan::Behavior;
+fn extract_preview_colors(behavior: &govee_themes::Behavior) -> Vec<Color> {
+    use govee_themes::themes::palette_sample;
+    use govee_themes::Behavior;
 
     match behavior {
         Behavior::Heat { palette, .. }
@@ -161,7 +161,7 @@ fn extract_preview_colors(behavior: &govee_lan::Behavior) -> Vec<Color> {
         }
         Behavior::HueRotate { saturation, value, .. } => {
             (0..4).map(|i| {
-                let (r, g, b) = govee_lan::themes::hsv_to_rgb(i as f64 / 4.0, *saturation, *value);
+                let (r, g, b) = govee_themes::themes::hsv_to_rgb(i as f64 / 4.0, *saturation, *value);
                 Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
             }).collect()
         }
@@ -171,7 +171,7 @@ fn extract_preview_colors(behavior: &govee_lan::Behavior) -> Vec<Color> {
     }
 }
 
-fn theme_card<'a>(theme: &govee_lan::ThemeDef, is_active: bool) -> Element<'a, Message> {
+fn theme_card<'a>(theme: &govee_themes::ThemeDef, is_active: bool) -> Element<'a, Message> {
     let name = theme.name.clone();
 
     // Color band — show palette preview
