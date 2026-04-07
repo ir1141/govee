@@ -40,8 +40,11 @@ pub enum Message {
 
     // Audio settings
     SetAudioMode(String),
+    SetAudioPalette(String),
     SetAudioBrightness(u8),
+    SetAudioSensitivity(u8),
     SetAudioSegments(usize),
+    ToggleAudioGradient(bool),
     StartAudio,
 
     // Ambient settings
@@ -304,8 +307,11 @@ impl App {
             Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; }
             Message::SetScreenSegments(v) => { self.config.screen.segments = v; }
             Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); }
+            Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); }
             Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; }
+            Message::SetAudioSensitivity(v) => { self.config.audio.sensitivity = v as f64 / 10.0; }
             Message::SetAudioSegments(v) => { self.config.audio.segments = v; }
+            Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); }
             Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; }
             Message::SaveConfig => { self.config.save(); }
             Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); }
@@ -326,12 +332,16 @@ impl App {
             }
             Message::StartAudio => {
                 let a = &self.config.audio;
-                self.start_subprocess("audio", vec![
+                let mut args = vec![
                     "audio".into(),
                     "--mode".into(), a.mode.clone(),
+                    "--palette".into(), a.palette.clone(),
                     "--brightness".into(), a.brightness.to_string(),
                     "--segments".into(), a.segments.to_string(),
-                ]);
+                    "--sensitivity".into(), a.sensitivity.to_string(),
+                ];
+                if a.gradient { args.push("--gradient".into()); }
+                self.start_subprocess("audio", args);
             }
             Message::StartAmbient => {
                 let amb = &self.config.ambient;
