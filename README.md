@@ -1,6 +1,6 @@
-# govee-lan
+# govee
 
-Control Govee LED strip lights over your local network using the LAN API. No cloud, no API keys, just UDP.
+Control Govee LED strip lights over your local network using the LAN API. No cloud, no API keys, just UDP. Includes a CLI and a GUI.
 
 ## Features
 
@@ -12,6 +12,7 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 - **[Audio mode](#audio-reactive)** — audio-reactive visualization with energy, frequency, beat, and drop modes
 - **DreamView** — multi-segment color control with gradient interpolation
 - **Mirror mode** — doubles segments in reverse for U-shaped strip layouts (`--mirror`)
+- **[GUI](#gui)** — graphical interface built with [iced](https://iced.rs) for all of the above
 
 ## Requirements
 
@@ -28,7 +29,7 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 git clone https://github.com/ir1141/govee.git
 cd govee
 cargo build --release
-# Binary at target/release/govee
+# Binaries at target/release/govee and target/release/govee-gui
 ```
 
 ## Usage
@@ -212,38 +213,54 @@ color = [80, 0, 160]
 Loops a behavior across DreamView segments until Ctrl+C:
 
 ```toml
-# ~/.config/govee/themes/lava-lamp.toml
-name = "lava-lamp"
-category = "vibes"
+# ~/.config/govee/themes/souls-bonfire.toml
+name = "souls-bonfire"
+category = "gaming"
 
 [kind]
 type = "animated"
 
 [kind.delay]
-random = [80, 200]
+random = [140, 300]
 
 [kind.behavior]
-type = "breathe"
-speed = 0.4
-power = 2
+type = "heat"
+volatility = 0.12
+spark_chance = 0.04
+spark_boost = 0.8
+dim_chance = 0.4
+dim_range = [0.05, 0.3]
+diffusion = 0.05
 
 [[kind.behavior.palette]]
 pos = 0.0
-r = 200
-g = 0
-b = 80
-
-[[kind.behavior.palette]]
-pos = 0.5
-r = 255
-g = 50
+r = 30
+g = 5
 b = 0
 
 [[kind.behavior.palette]]
-pos = 1.0
+pos = 0.3
+r = 80
+g = 20
+b = 0
+
+[[kind.behavior.palette]]
+pos = 0.6
+r = 140
+g = 50
+b = 5
+
+[[kind.behavior.palette]]
+pos = 0.85
 r = 200
-g = 0
-b = 80
+g = 90
+b = 10
+
+[[kind.behavior.palette]]
+pos = 1.0
+r = 255
+g = 140
+b = 20
 ```
 
 ##### Theme file structure
@@ -289,8 +306,27 @@ b = 0
 
 - To override a builtin, use the same name — your version takes priority
 - Category can be anything; custom categories show up in `govee theme --help`
-- Look at the builtin themes in `src/theme_defs.rs` for working examples of every behavior type
+- Look at the builtin themes in `govee-themes/src/theme_defs.rs` for working examples of every behavior type
 - Start with **breathe**, **drift**, or **gradient-wave** — they need the fewest parameters
+
+## GUI
+
+`govee-gui` is a graphical frontend built with [iced](https://iced.rs). It provides the same functionality as the CLI through a sidebar-navigated interface:
+
+- **Controls** — power, brightness, color picker, color temperature
+- **Themes** — browse and apply builtin/custom themes with category filters and palette previews
+- **Screen** — configure and launch ambilight mode (FPS, segments, brightness)
+- **Audio** — configure and launch audio-reactive mode (visualization mode, segments, brightness)
+- **Ambient** — configure and launch wallpaper sync (brightness, dim toggle)
+
+The GUI spawns the `govee` CLI as a subprocess for continuous modes (screen, audio, ambient, animated themes) and sends direct UDP commands for one-shot actions. Device discovery runs automatically on launch with periodic refresh. A global mirror toggle is available in the status bar.
+
+Settings (last device IP, page, per-mode options) persist in `~/.config/govee/gui.toml`.
+
+```bash
+# Launch the GUI
+govee-gui
+```
 
 ## How it works
 
@@ -310,7 +346,7 @@ No authentication, no cloud dependency, no rate limits.
 
 ## Contributing
 
-This started as a vibe-coded rewrite because the original Python version was too laggy. PRs are welcome.
+PRs are welcome.
 
 ## License
 
