@@ -68,7 +68,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     );
 
     // Sensitivity slider (0.1–3.0, stored as u8 1–30 mapped to f64)
-    let sens_val = (app.config.audio.sensitivity * 10.0) as u8;
+    let sens_val = (app.config.audio.sensitivity.clamp(0.1, 3.0) * 10.0).round() as u8;
     let sensitivity_card = container(
         column![
             row![
