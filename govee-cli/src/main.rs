@@ -1,8 +1,14 @@
+//! CLI frontend for controlling Govee LED strips over LAN.
+//!
+//! Supports one-shot commands (on/off, color, brightness) and continuous modes
+//! (themes, screen capture, audio reactive, ambient wallpaper sync).
+
 mod cli;
 mod themes;
 mod ambient;
 mod screen;
 mod audio_cmd;
+mod sunlight;
 mod ui;
 mod dreamview;
 
@@ -14,6 +20,7 @@ use std::time::Duration;
 use cli::{Cli, Command};
 use colored::Colorize;
 
+/// Parsed device status response from the `devStatus` command.
 #[derive(serde::Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct DevStatus {
@@ -29,6 +36,7 @@ struct DevStatus {
     sku: Option<String>,
 }
 
+/// RGB color sub-field within a device status response.
 #[derive(serde::Deserialize, Default)]
 struct StatusColor {
     #[serde(default)]
@@ -41,8 +49,10 @@ struct StatusColor {
 
 const SCAN_TIMEOUT: Duration = Duration::from_secs(2);
 
+/// Global flag set to `false` by the Ctrl+C handler to signal graceful shutdown.
 static RUNNING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
+/// Register the Ctrl+C handler (idempotent — safe to call multiple times).
 fn ctrlc_setup() {
     use std::sync::Once;
     static ONCE: Once = Once::new();
@@ -54,6 +64,7 @@ fn ctrlc_setup() {
     });
 }
 
+/// Resolve the device IP or exit with a user-friendly error if none found.
 fn resolve_or_exit(ip: Option<&str>) -> String {
     let auto = ip.is_none();
     if auto {
@@ -194,5 +205,6 @@ fn main() {
         Command::Ambient(args) => ambient::run_ambient(args, ip),
         Command::Screen(args) => screen::run_screen(args, ip, cli.mirror),
         Command::Audio(args) => audio_cmd::run_audio(args, ip, cli.mirror),
+        Command::Sunlight(args) => sunlight::run_sunlight(args, ip, cli.mirror),
     }
 }

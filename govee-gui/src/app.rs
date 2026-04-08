@@ -1,3 +1,8 @@
+//! Application state, message handling, and view composition.
+//!
+//! The [`App`] struct owns device state, configuration, subprocess management,
+//! and all page routing for the iced application.
+
 use govee_lan::DeviceInfo;
 use govee_themes::{ThemeDef, ThemeKind, load_all_themes};
 use iced::widget::{column, container, row};
@@ -7,6 +12,7 @@ use crate::config::GuiConfig;
 use crate::pages;
 use crate::widgets::{sidebar, status_bar};
 
+/// Navigation pages in the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Page {
     Controls,
@@ -14,8 +20,10 @@ pub enum Page {
     Screen,
     Audio,
     Ambient,
+    Sunlight,
 }
 
+/// All messages the application can process.
 #[derive(Debug, Clone)]
 pub enum Message {
     Navigate(Page),
@@ -52,10 +60,18 @@ pub enum Message {
     ToggleAmbientDim(bool),
     StartAmbient,
 
+    // Sunlight settings
+    SetSunlightPreset(String),
+    SetSunlightBrightness(u8),
+    SetSunlightSegments(usize),
+    SetSunlightTransition(u32),
+    StartSunlight,
+
     ToggleMirror(bool),
     SaveConfig,
 }
 
+/// Main application state.
 pub struct App {
     pub page: Page,
     pub device: Option<DeviceInfo>,
@@ -112,6 +128,7 @@ impl App {
             "screen" => Page::Screen,
             "audio" => Page::Audio,
             "ambient" => Page::Ambient,
+            "sunlight" => Page::Sunlight,
             _ => Page::Controls,
         };
         let brightness = config.controls.brightness;
@@ -171,6 +188,7 @@ impl App {
                     Page::Screen => "screen",
                     Page::Audio => "audio",
                     Page::Ambient => "ambient",
+                    Page::Sunlight => "sunlight",
                 }
                 .into();
                 self.config.save();
@@ -343,6 +361,29 @@ impl App {
                 if a.gradient { args.push("--gradient".into()); }
                 self.start_subprocess("audio", args);
             }
+            Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); }
+            Message::SetSunlightBrightness(v) => { self.config.sunlight.brightness = v; }
+            Message::SetSunlightSegments(v) => { self.config.sunlight.segments = v; }
+            Message::SetSunlightTransition(v) => { self.config.sunlight.transition = v; }
+            Message::StartSunlight => {
+                let s = &self.config.sunlight;
+                let mut args = vec![
+                    "sunlight".into(),
+                    "--preset".into(), s.preset.clone(),
+                    "--brightness".into(), s.brightness.to_string(),
+                    "--segments".into(), s.segments.to_string(),
+                    "--transition".into(), s.transition.to_string(),
+                ];
+                if let (Some(lat), Some(lon)) = (s.lat, s.lon) {
+                    args.extend(["--lat".into(), lat.to_string(), "--lon".into(), lon.to_string()]);
+                } else if let (Some(rise), Some(set)) = (&s.sunrise, &s.sunset) {
+                    args.extend(["--sunrise".into(), rise.clone(), "--sunset".into(), set.clone()]);
+                }
+                if s.preset == "simple" {
+                    args.extend(["--day-temp".into(), s.day_temp.to_string(), "--night-temp".into(), s.night_temp.to_string()]);
+                }
+                self.start_subprocess("sunlight", args);
+            }
             Message::StartAmbient => {
                 let amb = &self.config.ambient;
                 let mut args = vec![
@@ -376,6 +417,7 @@ impl App {
             Page::Screen => pages::screen::view(self),
             Page::Audio => pages::audio::view(self),
             Page::Ambient => pages::ambient::view(self),
+            Page::Sunlight => pages::sunlight::view(self),
         };
 
         let content = container(page_content)
@@ -388,6 +430,7 @@ impl App {
                 "screen" => format!("Screen Capture · {}s", self.elapsed_secs),
                 "audio" => format!("Audio Reactive · {}s", self.elapsed_secs),
                 "ambient" => format!("Ambient Sync · {}s", self.elapsed_secs),
+                "sunlight" => format!("Sunlight · {}s", self.elapsed_secs),
                 _ => format!("Mode: {mode}"),
             }
         } else if let Some(ref theme) = self.active_theme {

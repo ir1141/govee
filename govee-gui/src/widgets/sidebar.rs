@@ -1,9 +1,12 @@
+//! Sidebar navigation widget with page links and multi-device selector.
+
 use govee_lan::DeviceInfo;
 use iced::widget::{button, column, container, text};
 use iced::{Element, Length};
 use crate::app::{Message, Page};
 use crate::style;
 
+/// A single navigation button in the sidebar.
 fn nav_button(label: &'static str, page: Page, active: bool) -> Element<'static, Message> {
     button(text(label).size(14))
         .width(Length::Fill)
@@ -13,6 +16,7 @@ fn nav_button(label: &'static str, page: Page, active: bool) -> Element<'static,
         .into()
 }
 
+/// Render the full sidebar: header, nav links, and device selector (if multiple).
 pub fn view(current_page: Page, device_label: &str, devices: &[DeviceInfo], current_device_ip: Option<&str>) -> Element<'static, Message> {
     let device_label: String = device_label.to_string();
 
@@ -28,6 +32,7 @@ pub fn view(current_page: Page, device_label: &str, devices: &[DeviceInfo], curr
         nav_button("Screen", Page::Screen, current_page == Page::Screen),
         nav_button("Audio", Page::Audio, current_page == Page::Audio),
         nav_button("Ambient", Page::Ambient, current_page == Page::Ambient),
+        nav_button("Sunlight", Page::Sunlight, current_page == Page::Sunlight),
     ]
     .spacing(4.0);
 

@@ -1,3 +1,6 @@
+//! Theme rendering engine: looks up themes by name, initializes per-segment state,
+//! renders animation frames, and runs the main theme loop with DreamView output.
+
 use govee_themes::themes::{Rgb, PA, Behavior, Delay, ThemeKind, ThemeDef, palette_sample, lerp_rgb, hsv_to_rgb};
 use govee_lan::*;
 use govee_lan::UdpSender;
@@ -6,39 +9,39 @@ use std::time::Duration;
 
 use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
-// ── Theme registry ──────────────────────────────────────────────────────────
-
+/// Look up a theme by name from all loaded themes (builtins + user).
 pub fn get_theme(name: &str) -> Option<ThemeDef> {
     govee_themes::load_all_themes()
         .into_iter()
         .find(|t| t.name == name)
 }
 
+/// Format the theme list for clap help text.
 pub fn theme_list_display() -> String {
     let themes = govee_themes::load_all_themes();
     let pairs: Vec<(&str, &str)> = themes.iter().map(|t| (t.name.as_str(), t.category.as_str())).collect();
     crate::ui::theme_list_help(&pairs)
 }
 
-// ── State initialization ────────────────────────────────────────────────────
-
-fn init_state(behavior: &Behavior, n_seg: usize) -> Vec<f64> {
+/// Initialize per-segment state for a behavior. Heat starts with warm values;
+/// all others start at zero.
+pub(crate) fn init_state(behavior: &Behavior, n_seg: usize) -> Vec<f64> {
     match behavior {
         Behavior::Heat { .. } => (0..n_seg).map(|i| (i as f64 * 0.4).fract().max(0.3)).collect(),
         _ => vec![0.0; n_seg],
     }
 }
 
-// ── Frame rendering ─────────────────────────────────────────────────────────
-
-fn get_delay(delay: &Delay, rng: &mut impl RngExt) -> u64 {
+/// Compute the frame delay in milliseconds from a Delay spec.
+pub(crate) fn get_delay(delay: &Delay, rng: &mut impl RngExt) -> u64 {
     match delay {
         Delay::Fixed(ms) => *ms,
         Delay::Random(lo, hi) => rng.random_range(*lo..=*hi),
     }
 }
 
-fn render_frame(
+/// Render one animation frame, dispatching to the behavior-specific renderer.
+pub(crate) fn render_frame(
     behavior: &Behavior,
     rng: &mut impl RngExt,
     state: &mut [f64],
@@ -75,6 +78,7 @@ fn render_frame(
     }
 }
 
+/// Cellular-automata fire: random perturbation + spark injection + neighbor diffusion.
 #[allow(clippy::too_many_arguments)]
 fn render_heat(
     palette: &[PA], volatility: f64, spark_chance: f64, spark_boost: f64,
@@ -104,6 +108,7 @@ fn render_heat(
     state[..n_seg].iter().map(|&h| palette_sample(palette, h)).collect()
 }
 
+/// Weighted sinusoidal wave superposition sampled through a palette.
 fn render_wave(palette: &[PA], waves: &[govee_themes::themes::WaveParam], weights: &[f64], n_seg: usize, t: f64) -> Vec<Rgb> {
     (0..n_seg)
         .map(|i| {
@@ -218,6 +223,7 @@ fn render_hue_rotate(speed: f64, saturation: f64, value: f64, n_seg: usize, t: f
         .collect()
 }
 
+/// Sinusoidal lerp between two colors. `PI / n_seg` spreads one half-wave across the strip.
 fn render_gradient_wave(color_a: Rgb, color_b: Rgb, speed: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
     (0..n_seg)
         .map(|i| {
@@ -269,6 +275,7 @@ fn render_drift(palette: &[PA], speed: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
         .collect()
 }
 
+/// Pulse radiates outward from center; brightness falls off linearly within `width`.
 fn render_radiate_pulse(color: Rgb, speed: f64, width: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
     let center = n_seg as f64 / 2.0;
     let pulse_pos = (t * speed).fract();
@@ -297,8 +304,7 @@ fn render_progression(palette: &[PA], duration_secs: f64, spatial_spread: f64, n
         .collect()
 }
 
-// ── Run loop ────────────────────────────────────────────────────────────────
-
+/// Run a theme: solid themes send a single color; animated themes loop until Ctrl+C.
 pub fn run_theme(
     name: &str,
     ip: Option<String>,

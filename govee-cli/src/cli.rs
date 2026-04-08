@@ -1,10 +1,14 @@
+//! Command-line argument definitions using clap derive.
+
 use clap::{Args, Parser, Subcommand};
 
+/// CLI-side visualization mode (maps to [`govee_lan::audio::VisMode`]).
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CliVisMode {
     Energy, Frequency, Beat, Drop,
 }
 
+/// CLI-side palette selection (maps to [`govee_lan::audio::Palette`]).
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CliPalette {
     Fire, Ocean, Forest, Neon, Ice, Sunset, Rainbow,
@@ -35,8 +39,15 @@ impl From<CliPalette> for govee_lan::audio::Palette {
     }
 }
 
+/// CLI-side sunlight preset selection.
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum CliSunlightPreset {
+    Coastal, Arctic, Ember, Simple,
+}
+
 use crate::themes;
 
+/// Validate segment count is within the DreamView range (1-127).
 fn parse_segments_127(s: &str) -> Result<usize, String> {
     let v: usize = s.parse().map_err(|_| format!("invalid number '{s}'"))?;
     if !(1..=127).contains(&v) {
@@ -114,6 +125,8 @@ pub enum Command {
     Screen(ScreenArgs),
     /// React to system audio with LED visualizations
     Audio(AudioArgs),
+    /// Adjust LED mood based on time of day (ocean by day, fireplace by night)
+    Sunlight(SunlightArgs),
 }
 
 #[derive(Args)]
@@ -130,6 +143,45 @@ pub struct AmbientArgs {
 
     #[arg(long, help = "Use the Dim variant of the color")]
     pub dim: bool,
+
+    #[arg(short, long, help = "Verbose output")]
+    pub verbose: bool,
+}
+
+#[derive(Args)]
+pub struct SunlightArgs {
+    #[arg(long, default_value = "coastal", help = "Preset: coastal, arctic, ember, simple")]
+    pub preset: CliSunlightPreset,
+
+    #[arg(long, allow_negative_numbers = true, help = "Latitude for solar calculation")]
+    pub lat: Option<f64>,
+
+    #[arg(long, allow_negative_numbers = true, help = "Longitude for solar calculation")]
+    pub lon: Option<f64>,
+
+    #[arg(long, help = "Manual sunrise time (HH:MM)")]
+    pub sunrise: Option<String>,
+
+    #[arg(long, help = "Manual sunset time (HH:MM)")]
+    pub sunset: Option<String>,
+
+    #[arg(long, default_value_t = 45, help = "Transition duration in minutes")]
+    pub transition: u32,
+
+    #[arg(long, default_value_t = 80, help = "Strip brightness 1-100")]
+    pub brightness: u8,
+
+    #[arg(long, help = "Night brightness 1-100 (omit to keep constant)")]
+    pub night_brightness: Option<u8>,
+
+    #[arg(long, default_value_t = 15, value_parser = parse_segments_127, help = "Number of DreamView segments")]
+    pub segments: usize,
+
+    #[arg(long, default_value_t = 6500, help = "Day color temperature (simple preset only)")]
+    pub day_temp: u16,
+
+    #[arg(long, default_value_t = 3000, help = "Night color temperature (simple preset only)")]
+    pub night_temp: u16,
 
     #[arg(short, long, help = "Verbose output")]
     pub verbose: bool,

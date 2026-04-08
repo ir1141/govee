@@ -1,3 +1,6 @@
+//! Persistent GUI configuration stored as TOML at `~/.config/govee/gui.toml`.
+//! Each page's settings are preserved across sessions.
+
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -8,6 +11,7 @@ fn config_path() -> PathBuf {
         .join("gui.toml")
 }
 
+/// Top-level GUI configuration with per-page sections.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GuiConfig {
     #[serde(default)]
@@ -20,6 +24,8 @@ pub struct GuiConfig {
     pub audio: AudioConfig,
     #[serde(default)]
     pub ambient: AmbientConfig,
+    #[serde(default)]
+    pub sunlight: SunlightConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -121,6 +127,39 @@ impl Default for AudioConfig {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SunlightConfig {
+    pub preset: String,
+    pub brightness: u8,
+    pub segments: usize,
+    pub transition: u32,
+    pub lat: Option<f64>,
+    pub lon: Option<f64>,
+    pub sunrise: Option<String>,
+    pub sunset: Option<String>,
+    pub day_temp: u16,
+    pub night_temp: u16,
+    pub night_brightness: Option<u8>,
+}
+
+impl Default for SunlightConfig {
+    fn default() -> Self {
+        Self {
+            preset: "coastal".to_string(),
+            brightness: 80,
+            segments: 15,
+            transition: 45,
+            lat: None,
+            lon: None,
+            sunrise: None,
+            sunset: None,
+            day_temp: 6500,
+            night_temp: 3000,
+            night_brightness: None,
+        }
+    }
+}
+
 impl Default for AmbientConfig {
     fn default() -> Self {
         Self {
@@ -133,6 +172,7 @@ impl Default for AmbientConfig {
 
 
 impl GuiConfig {
+    /// Load config from disk, falling back to defaults if missing or invalid.
     pub fn load() -> Self {
         let path = config_path();
         match std::fs::read_to_string(&path) {
@@ -141,6 +181,7 @@ impl GuiConfig {
         }
     }
 
+    /// Write config to disk, creating parent directories if needed.
     pub fn save(&self) {
         let path = config_path();
         if let Some(parent) = path.parent() {
