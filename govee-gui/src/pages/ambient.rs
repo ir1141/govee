@@ -1,3 +1,5 @@
+//! Ambient sync settings page: brightness and dim toggle for Caelestia wallpaper sync.
+
 use iced::widget::{column, container, horizontal_space, row, text, toggler};
 use iced::{Alignment, Element};
 use crate::app::{App, Message};
@@ -19,7 +21,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .spacing(style::SPACING);
 
     let brightness_card = crate::widgets::slider_card::slider_card(
-        "Brightness", app.config.ambient.brightness, "%", 1..=100, Message::SetAmbientBrightness,
+        "Brightness", app.config.ambient.brightness, "%", 1..=100, Message::SetAmbientBrightness, Message::ApplyAmbientSettings,
     );
 
     // Dim card

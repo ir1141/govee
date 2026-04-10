@@ -44,16 +44,16 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .style(style::card_style);
 
     let brightness_card = crate::widgets::slider_card::slider_card(
-        "Brightness", app.config.sunlight.brightness, "%", 1..=100, Message::SetSunlightBrightness,
+        "Brightness", app.config.sunlight.brightness, "%", 1..=100, Message::SetSunlightBrightness, Message::ApplySunlightSettings,
     );
 
     let segments_card = crate::widgets::slider_card::segments_card(
-        app.config.sunlight.segments, Message::SetSunlightSegments,
+        app.config.sunlight.segments, Message::SetSunlightSegments, Message::ApplySunlightSettings,
     );
 
     let transition_card = crate::widgets::slider_card::slider_card(
         "Transition", app.config.sunlight.transition as u8, "min", 10..=120,
-        |v| Message::SetSunlightTransition(v as u32),
+        |v| Message::SetSunlightTransition(v as u32), Message::ApplySunlightSettings,
     );
 
     column![

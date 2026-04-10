@@ -69,6 +69,12 @@ pub enum Message {
 
     ToggleMirror(bool),
     SaveConfig,
+
+    // Apply settings and restart subprocess if mode is active
+    ApplyScreenSettings,
+    ApplyAudioSettings,
+    ApplyAmbientSettings,
+    ApplySunlightSettings,
 }
 
 /// Main application state.
@@ -102,6 +108,20 @@ impl App {
         self.active_mode = None;
         self.subprocess_start = None;
         self.elapsed_secs = 0;
+    }
+
+    /// If the given mode is currently running, restart its subprocess with current config.
+    fn restart_if_active(&mut self, mode: &str) -> Task<Message> {
+        if self.active_mode.as_deref() == Some(mode) {
+            match mode {
+                "screen" => return self.update(Message::StartScreen),
+                "audio" => return self.update(Message::StartAudio),
+                "ambient" => return self.update(Message::StartAmbient),
+                "sunlight" => return self.update(Message::StartSunlight),
+                _ => {}
+            }
+        }
+        Task::none()
     }
 
     /// Spawn a govee CLI subprocess for a continuous mode.
@@ -324,20 +344,23 @@ impl App {
             Message::SetScreenFps(v) => { self.config.screen.fps = v; }
             Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; }
             Message::SetScreenSegments(v) => { self.config.screen.segments = v; }
-            Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); }
-            Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); }
+            Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); return self.restart_if_active("audio"); }
+            Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); return self.restart_if_active("audio"); }
             Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; }
             Message::SetAudioSensitivity(v) => { self.config.audio.sensitivity = v as f64 / 10.0; }
             Message::SetAudioSegments(v) => { self.config.audio.segments = v; }
-            Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); }
+            Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); return self.restart_if_active("audio"); }
             Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; }
             Message::SaveConfig => { self.config.save(); }
-            Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); }
+            Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); return self.restart_if_active("ambient"); }
             Message::ToggleMirror(v) => {
                 self.mirror = v;
                 self.config.screen.mirror = v;
                 self.config.audio.mirror = v;
                 self.config.save();
+                if let Some(mode) = self.active_mode.clone() {
+                    return self.restart_if_active(&mode);
+                }
             }
             Message::StartScreen => {
                 let s = &self.config.screen;
@@ -361,7 +384,7 @@ impl App {
                 if a.gradient { args.push("--gradient".into()); }
                 self.start_subprocess("audio", args);
             }
-            Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); }
+            Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); return self.restart_if_active("sunlight"); }
             Message::SetSunlightBrightness(v) => { self.config.sunlight.brightness = v; }
             Message::SetSunlightSegments(v) => { self.config.sunlight.segments = v; }
             Message::SetSunlightTransition(v) => { self.config.sunlight.transition = v; }
@@ -384,6 +407,10 @@ impl App {
                 }
                 self.start_subprocess("sunlight", args);
             }
+            Message::ApplyScreenSettings => { self.config.save(); return self.restart_if_active("screen"); }
+            Message::ApplyAudioSettings => { self.config.save(); return self.restart_if_active("audio"); }
+            Message::ApplyAmbientSettings => { self.config.save(); return self.restart_if_active("ambient"); }
+            Message::ApplySunlightSettings => { self.config.save(); return self.restart_if_active("sunlight"); }
             Message::StartAmbient => {
                 let amb = &self.config.ambient;
                 let mut args = vec![

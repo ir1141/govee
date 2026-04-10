@@ -1,3 +1,5 @@
+//! Controls page: power toggle, brightness slider, color presets, and color temperature.
+
 use iced::widget::{button, column, container, horizontal_space, row, slider, text, toggler};
 use iced::{Alignment, Color, Element, Length};
 use crate::app::{App, Message};
@@ -29,7 +31,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .align_y(Alignment::Center);
 
     let brightness_card = crate::widgets::slider_card::slider_card(
-        "Brightness", app.brightness, "%", 1..=100, Message::SetBrightness,
+        "Brightness", app.brightness, "%", 1..=100, Message::SetBrightness, Message::SaveConfig,
     );
 
     // Color card

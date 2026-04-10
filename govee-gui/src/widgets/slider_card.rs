@@ -1,3 +1,5 @@
+//! Card-style slider widgets for numeric settings, with save-on-release behavior.
+
 use iced::widget::{column, container, horizontal_space, row, slider, text};
 use iced::{Alignment, Element, Length};
 use crate::app::Message;
@@ -10,6 +12,7 @@ pub fn slider_card<'a>(
     suffix: &'a str,
     range: std::ops::RangeInclusive<u8>,
     on_change: impl Fn(u8) -> Message + 'a,
+    release_msg: Message,
 ) -> Element<'a, Message> {
     let display = if suffix.is_empty() {
         format!("{value}")
@@ -25,7 +28,7 @@ pub fn slider_card<'a>(
             ]
             .align_y(Alignment::Center),
             slider(range, value, on_change)
-                .on_release(Message::SaveConfig)
+                .on_release(release_msg)
                 .width(Length::Fill),
         ]
         .spacing(10),
@@ -39,6 +42,7 @@ pub fn slider_card<'a>(
 pub fn segments_card<'a>(
     value: usize,
     on_change: impl Fn(usize) -> Message + 'a,
+    release_msg: Message,
 ) -> Element<'a, Message> {
     container(
         column![
@@ -49,7 +53,7 @@ pub fn segments_card<'a>(
             ]
             .align_y(Alignment::Center),
             slider(1u8..=15u8, value as u8, move |v| on_change(v as usize))
-                .on_release(Message::SaveConfig)
+                .on_release(release_msg)
                 .width(Length::Fill),
         ]
         .spacing(10),
