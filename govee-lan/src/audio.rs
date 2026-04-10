@@ -50,6 +50,10 @@ pub struct AudioState {
     pub beat: bool,
     /// recent peak for auto-gain
     pub peak: f64,
+    /// positive-only frame-to-frame bass change (spectral flux for bands 0+1)
+    pub bass_flux: f64,
+    /// positive-only frame-to-frame treble change (spectral flux for bands 4+5)
+    pub treble_flux: f64,
 }
 
 impl Default for AudioState {
@@ -59,6 +63,8 @@ impl Default for AudioState {
             bands: [0.0; 6],
             beat: false,
             peak: 0.001,
+            bass_flux: 0.0,
+            treble_flux: 0.0,
         }
     }
 }
@@ -131,6 +137,12 @@ const BEAT_THRESHOLD: f64 = 1.5;
 const ENERGY_HISTORY: usize = 43;
 /// Below this RMS the signal is treated as silence to avoid amplifying noise.
 const NOISE_GATE: f64 = 5e-3;
+/// Band EMA smoothing factor — 0.4 × raw + 0.6 × previous.
+/// Reduces flicker in frequency mode without perceptible lag.
+const BAND_SMOOTH: f64 = 0.4;
+/// Flux must exceed this to trigger a drop flash.
+/// 0.3 = normalized band jumped 30% of its range in one frame (~23ms).
+const FLUX_TRIGGER: f64 = 0.3;
 
 /// Frequency boundaries in Hz for 6 perceptual bands:
 /// sub-bass, bass, low-mid, mid, upper-mid, brilliance.
@@ -314,9 +326,12 @@ fn capture_loop(
     let mut energy_history: VecDeque<f64> = VecDeque::with_capacity(ENERGY_HISTORY);
     let mut last_beat = Instant::now();
 
-    // Adaptive gain: fast rise (0.99) catches transients, moderate decay (0.05) releases in ~1s
-    let mut rms_gain = ExpFilter::new(NOISE_GATE, 0.99, 0.05);
-    let mut band_gains: [ExpFilter; 6] = std::array::from_fn(|_| ExpFilter::new(NOISE_GATE, 0.99, 0.05));
+    // Adaptive gain: fast rise (0.99) catches transients, slow decay (0.02) releases in ~2.5s
+    let mut rms_gain = ExpFilter::new(NOISE_GATE, 0.99, 0.02);
+    let mut band_gains: [ExpFilter; 6] = std::array::from_fn(|_| ExpFilter::new(NOISE_GATE, 0.99, 0.02));
+    let mut prev_bass: f64 = 0.0;
+    let mut prev_treble: f64 = 0.0;
+    let mut smoothed_bands = [0.0_f64; 6];
 
     while running.load(std::sync::atomic::Ordering::Relaxed) {
         mainloop.iterate(true);
@@ -390,6 +405,19 @@ fn capture_loop(
             bands[band_idx] = if peak > NOISE_GATE { (avg / peak).clamp(0.0, 1.0) } else { 0.0 };
         }
 
+        // Spectral flux — positive-only frame-to-frame delta for onset detection
+        let bass = bands[0].max(bands[1]);
+        let treble = bands[4].max(bands[5]);
+        let bass_flux = (bass - prev_bass).max(0.0);
+        let treble_flux = (treble - prev_treble).max(0.0);
+        prev_bass = bass;
+        prev_treble = treble;
+
+        // Per-band temporal smoothing to reduce flicker
+        for i in 0..6 {
+            smoothed_bands[i] = BAND_SMOOTH * bands[i] + (1.0 - BAND_SMOOTH) * smoothed_bands[i];
+        }
+
         // Adaptive RMS normalization — track peak with fast rise / slow decay
         let rms_peak = rms_gain.update(rms);
         let energy = if rms < NOISE_GATE {
@@ -398,13 +426,15 @@ fn capture_loop(
             (rms / rms_peak).clamp(0.0, 1.0)
         };
 
-        // Beat detection
-        energy_history.push_back(energy);
+        // Beat detection — uses raw RMS (not normalized energy) so the
+        // threshold comparison isn't compressed by adaptive gain
+        energy_history.push_back(rms);
         if energy_history.len() > ENERGY_HISTORY {
             energy_history.pop_front();
         }
-        let avg_energy = energy_history.iter().sum::<f64>() / energy_history.len() as f64;
-        let beat = energy > avg_energy * BEAT_THRESHOLD
+        let avg_rms = energy_history.iter().sum::<f64>() / energy_history.len() as f64;
+        let beat = rms > NOISE_GATE
+            && rms > avg_rms * BEAT_THRESHOLD
             && last_beat.elapsed().as_millis() > BEAT_COOLDOWN_MS;
         if beat {
             last_beat = Instant::now();
@@ -413,9 +443,11 @@ fn capture_loop(
         // Update shared state
         let mut s = state.lock().unwrap_or_else(|e| e.into_inner());
         s.energy = energy;
-        s.bands = bands;
+        s.bands = smoothed_bands;
         s.beat = beat;
         s.peak = rms;
+        s.bass_flux = bass_flux;
+        s.treble_flux = treble_flux;
     }
 
     Ok(())
@@ -492,27 +524,22 @@ fn map_beat(
         .collect()
 }
 
-/// Drop mode: stays dark, flashes on bass drops (deep red/purple) or treble hits (cyan/white).
-/// beat_hue tracks bass decay, beat_decay tracks treble decay.
+/// Drop mode: stays dark, flashes on bass onsets (deep red/purple) or treble onsets (cyan/white).
+/// Uses spectral flux (frame-to-frame change) so sustained bass doesn't cause continuous flash.
 fn map_drop(
     audio: &AudioState,
     n_seg: usize,
     bass_decay: &mut f64,
     treble_decay: &mut f64,
 ) -> Vec<(u8, u8, u8)> {
-    let bass = audio.bands[0].max(audio.bands[1]);
-    let treble = audio.bands[4].max(audio.bands[5]);
-
-    const TRIGGER: f64 = 0.65;
-
-    if bass > TRIGGER {
+    if audio.bass_flux > FLUX_TRIGGER {
         *bass_decay = 1.0;
     } else {
         // Fast fade: 0.7 per frame ≈ 2-frame half-life — visible ~4-5 frames then gone
         *bass_decay *= 0.7;
     }
 
-    if treble > TRIGGER {
+    if audio.treble_flux > FLUX_TRIGGER {
         *treble_decay = 1.0;
     } else {
         *treble_decay *= 0.65;

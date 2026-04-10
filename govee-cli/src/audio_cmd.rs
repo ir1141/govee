@@ -67,6 +67,8 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
         for band in audio.bands.iter_mut() {
             *band = (*band * args.sensitivity).clamp(0.0, 1.0);
         }
+        audio.bass_flux = (audio.bass_flux * args.sensitivity).clamp(0.0, 1.0);
+        audio.treble_flux = (audio.treble_flux * args.sensitivity).clamp(0.0, 1.0);
 
         let raw_colors = map_colors(
             &audio,
