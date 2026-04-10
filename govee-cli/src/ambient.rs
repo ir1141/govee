@@ -1,3 +1,6 @@
+//! Ambient sync mode: watches Caelestia's `scheme.json` via inotify and updates
+//! the LED strip color when the desktop wallpaper theme changes.
+
 use govee_lan::{hex_to_rgb, send_brightness, send_color};
 use inotify::{Inotify, WatchMask};
 use std::path::PathBuf;
@@ -7,6 +10,7 @@ use std::time::Duration;
 use crate::cli::AmbientArgs;
 use crate::{RUNNING, ctrlc_setup};
 
+/// Run the ambient sync loop, watching for wallpaper theme changes.
 pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
     let valid_colors = [
         "primary",
@@ -81,6 +85,8 @@ pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
     let mut buffer = [0u8; 4096];
     while RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
         use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
+        // SAFETY: `raw_fd` is from `inotify.as_raw_fd()` above and `inotify` lives
+        // for the entire loop. The BorrowedFd does not outlive the owning Inotify.
         let borrowed_fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(raw_fd) };
         let mut poll_fds = [PollFd::new(borrowed_fd, PollFlags::POLLIN)];
         match poll(&mut poll_fds, PollTimeout::from(1000u16)) {
@@ -124,12 +130,14 @@ pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
     crate::ui::stopped();
 }
 
+/// Path to Caelestia's wallpaper color scheme file.
 fn scheme_path() -> anyhow::Result<PathBuf> {
     Ok(dirs::home_dir()
         .ok_or_else(|| anyhow::anyhow!("Could not determine home directory"))?
         .join(".local/state/caelestia/scheme.json"))
 }
 
+/// Read a hex color from the scheme JSON at the given key.
 fn read_scheme_color(path: &std::path::Path, color_key: &str) -> Option<(u8, u8, u8)> {
     let text = std::fs::read_to_string(path).ok()?;
     let scheme: serde_json::Value = serde_json::from_str(&text).ok()?;

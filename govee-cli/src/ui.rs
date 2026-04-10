@@ -1,3 +1,6 @@
+//! Terminal UI helpers: banner, colored output, brightness bars, color swatches,
+//! segment blocks, and theme list formatting.
+
 use colored::Colorize;
 
 const DIAMOND: &str = "◆";
@@ -5,8 +8,7 @@ const ERROR_X: &str = "✖";
 const FILLED: char = '█';
 const EMPTY: char = '░';
 
-// ── Banner ─────────────────────────────────────────────────────────────────
-
+/// Print the application banner with version.
 pub fn banner() {
     println!(
         "{} {} {}",
@@ -18,25 +20,23 @@ pub fn banner() {
     println!("{}", "─────────────────────────────────".dimmed());
 }
 
-// ── Info / status lines ────────────────────────────────────────────────────
-
+/// Print a labeled info line with a purple diamond prefix.
 pub fn info(label: &str, value: &str) {
     println!("{} {} {}", DIAMOND.purple(), label, value);
 }
 
-// ── Errors ─────────────────────────────────────────────────────────────────
-
+/// Print an error message to stderr.
 pub fn error(msg: &str) {
     eprintln!("{} {}", ERROR_X.red(), msg.red());
 }
 
+/// Print an error with a hint on the next line.
 pub fn error_hint(msg: &str, hint: &str) {
     eprintln!("{} {}", ERROR_X.red(), msg.red());
     eprintln!("  {}", hint.dimmed());
 }
 
-// ── Brightness bar ─────────────────────────────────────────────────────────
-
+/// Render a 10-block brightness bar with percentage.
 pub fn brightness_bar(percent: u8) -> String {
     let filled = (percent as usize).div_ceil(10);
     let filled = filled.min(10);
@@ -49,8 +49,7 @@ pub fn brightness_bar(percent: u8) -> String {
     )
 }
 
-// ── Color swatch ───────────────────────────────────────────────────────────
-
+/// Render a colored swatch block with hex code.
 pub fn color_swatch(r: u8, g: u8, b: u8) -> String {
     format!(
         "{} {}",
@@ -59,12 +58,12 @@ pub fn color_swatch(r: u8, g: u8, b: u8) -> String {
     )
 }
 
+/// Render a colored swatch with both hex and decimal RGB.
 pub fn color_swatch_full(r: u8, g: u8, b: u8) -> String {
     format!("{} {}", color_swatch(r, g, b), format!("({r}, {g}, {b})").dimmed())
 }
 
-// ── Segment blocks ─────────────────────────────────────────────────────────
-
+/// Render colored block characters for each segment.
 pub fn segment_blocks(colors: &[(u8, u8, u8)]) -> String {
     colors
         .iter()
@@ -72,8 +71,7 @@ pub fn segment_blocks(colors: &[(u8, u8, u8)]) -> String {
         .collect::<String>()
 }
 
-// ── Live status line (continuous modes) ────────────────────────────────────
-
+/// Overwrite the current terminal line with segment colors and metadata.
 pub fn status_line(segments: &[(u8, u8, u8)], meta: &str) {
     let blocks = segment_blocks(segments);
     print!("\r{} {}", blocks, meta.dimmed());
@@ -81,16 +79,17 @@ pub fn status_line(segments: &[(u8, u8, u8)], meta: &str) {
     std::io::stdout().flush().ok();
 }
 
+/// End the live status line with a newline.
 pub fn status_line_finish() {
     println!();
 }
 
-// ── Discovery ──────────────────────────────────────────────────────────────
-
+/// Print "Scanning for devices..." status.
 pub fn discovery_scanning() {
     eprintln!("{} {}", DIAMOND.purple(), "Scanning for devices...".dimmed());
 }
 
+/// Print a discovered device name and IP.
 pub fn discovery_found(name: &str, ip: &str) {
     eprintln!(
         "{} Found {} {} {}",
@@ -100,8 +99,6 @@ pub fn discovery_found(name: &str, ip: &str) {
         ip.cyan()
     );
 }
-
-// ── Theme list ─────────────────────────────────────────────────────────────
 
 fn category_color(category: &str) -> colored::Color {
     match category {
@@ -154,12 +151,12 @@ pub fn theme_list_help(themes: &[(&str, &str)]) -> String {
     out
 }
 
-// ── Shutdown messages ──────────────────────────────────────────────────────
-
+/// Print DreamView deactivation message.
 pub fn deactivating() {
     println!("{}", "Deactivating DreamView mode...".dimmed());
 }
 
+/// Print "Stopped." message.
 pub fn stopped() {
     println!("{}", "Stopped.".dimmed());
 }

@@ -1,11 +1,16 @@
+//! DreamView lifecycle helpers: activate/deactivate the Razer protocol, compute
+//! segment counts, and apply mirror transforms for U-shaped strip layouts.
+
 use std::borrow::Cow;
 use std::time::Duration;
 use govee_lan::{send_brightness, razer_activate, razer_deactivate};
 
+/// Returns the effective segment count (1 if not using DreamView).
 pub fn segment_count(use_razer: bool, segments: usize) -> usize {
     if use_razer { segments.max(1) } else { 1 }
 }
 
+/// Set brightness and activate DreamView mode if enabled.
 pub fn activate(ip: &str, brightness: u8, use_razer: bool) {
     if let Err(e) = send_brightness(ip, brightness) {
         crate::ui::error(&format!("Failed to set brightness: {e}"));
@@ -18,6 +23,7 @@ pub fn activate(ip: &str, brightness: u8, use_razer: bool) {
     }
 }
 
+/// Clean up: finish status line, deactivate DreamView, print stopped.
 pub fn shutdown(ip: &str, use_razer: bool) {
     crate::ui::status_line_finish();
     if use_razer {
@@ -27,6 +33,7 @@ pub fn shutdown(ip: &str, use_razer: bool) {
     crate::ui::stopped();
 }
 
+/// Double the segment list by appending a reversed copy for U-shaped strip layouts.
 pub fn apply_mirror(colors: &[(u8, u8, u8)], mirror: bool) -> Cow<'_, [(u8, u8, u8)]> {
     if mirror {
         let mut mirrored = colors.to_vec();

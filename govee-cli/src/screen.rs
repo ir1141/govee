@@ -1,3 +1,6 @@
+//! Screen capture mode: captures Wayland frames, extracts per-segment colors
+//! with oversampling, smooths transitions, and streams to the strip via DreamView.
+
 use govee_lan::*;
 use govee_lan::wayland::ScreenCapturer;
 use govee_lan::UdpSender;
@@ -26,6 +29,7 @@ fn merge_segments(colors: &[(u8, u8, u8)], n: usize) -> Vec<(u8, u8, u8)> {
         .collect()
 }
 
+/// Run the screen capture loop, streaming segment colors to the device.
 pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
     let mut capturer = match ScreenCapturer::new() {
         Ok(c) => c,

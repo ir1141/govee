@@ -1,17 +1,22 @@
+//! Built-in theme definitions organized by category: static, nature, vibes,
+//! functional, and seasonal.
+
 use crate::themes::{pa, wp, Behavior, Delay, ThemeDef, ThemeKind};
 
+/// Ordered list of built-in theme categories for display purposes.
 pub const BUILTIN_CATEGORIES: &[&str] = &["static", "nature", "vibes", "functional", "seasonal"];
 
+/// Returns all 30 built-in theme definitions.
 pub fn builtin_themes() -> Vec<ThemeDef> {
     vec![
-    // ── Static ──────────────────────────────────────────────────────────
+    // Static
     ThemeDef { name: "movie".into(),  category: "static".into(), kind: ThemeKind::Solid { color: (20, 10, 40) } },
     ThemeDef { name: "chill".into(),  category: "static".into(), kind: ThemeKind::Solid { color: (80, 40, 120) } },
     ThemeDef { name: "party".into(),  category: "static".into(), kind: ThemeKind::Solid { color: (255, 0, 200) } },
     ThemeDef { name: "sunset".into(), category: "static".into(), kind: ThemeKind::Solid { color: (255, 100, 20) } },
     ThemeDef { name: "forest".into(), category: "static".into(), kind: ThemeKind::Solid { color: (10, 120, 30) } },
 
-    // ── Nature ──────────────────────────────────────────────────────────
+    // Nature
     ThemeDef {
         name: "candlelight".into(), category: "nature".into(),
         kind: ThemeKind::Animated {
@@ -114,7 +119,7 @@ pub fn builtin_themes() -> Vec<ThemeDef> {
         },
     },
 
-    // ── Vibes ───────────────────────────────────────────────────────────
+    // Vibes
     ThemeDef {
         name: "breathing".into(), category: "vibes".into(),
         kind: ThemeKind::Animated {
@@ -187,7 +192,7 @@ pub fn builtin_themes() -> Vec<ThemeDef> {
         },
     },
 
-    // ── Functional ──────────────────────────────────────────────────────
+    // Functional
     ThemeDef {
         name: "storm".into(), category: "functional".into(),
         kind: ThemeKind::Animated {
@@ -278,7 +283,7 @@ pub fn builtin_themes() -> Vec<ThemeDef> {
         },
     },
 
-    // ── Seasonal ────────────────────────────────────────────────────────
+    // Seasonal
     ThemeDef {
         name: "christmas".into(), category: "seasonal".into(),
         kind: ThemeKind::Animated {

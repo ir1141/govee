@@ -1,7 +1,10 @@
+//! Design tokens and reusable iced widget styles for the dark theme.
+//!
+//! Defines the color palette, spacing constants, shadow presets, and style
+//! functions for cards, sidebar, status bar, and buttons.
+
 use iced::widget::{button, container};
 use iced::{Background, Border, Color, Shadow, Vector};
-
-// ── Palette ─────────────────────────────────────────────────────────────────
 
 pub const BG: Color = Color::from_rgb(0.07, 0.07, 0.09);
 pub const SIDEBAR_BG: Color = Color::from_rgb(0.09, 0.09, 0.12);
@@ -22,15 +25,11 @@ pub const SUCCESS: Color = Color::from_rgb(0.30, 0.88, 0.55);
 pub const DANGER: Color = Color::from_rgb(0.90, 0.25, 0.25);
 pub const DANGER_HOVER: Color = Color::from_rgb(0.80, 0.20, 0.20);
 
-// ── Spacing & sizing ───────────────────────────────────────────────────────
-
 pub const SPACING: f32 = 10.0;
 pub const RADIUS: f32 = 12.0;
 pub const RADIUS_SM: f32 = 8.0;
 pub const RADIUS_LG: f32 = 16.0;
 pub const SIDEBAR_WIDTH: f32 = 220.0;
-
-// ── Shadows ────────────────────────────────────────────────────────────────
 
 const CARD_SHADOW: Shadow = Shadow {
     color: Color::from_rgba(0.0, 0.0, 0.0, 0.3),
@@ -44,8 +43,7 @@ const SIDEBAR_SHADOW: Shadow = Shadow {
     blur_radius: 12.0,
 };
 
-// ── Reusable container styles ──────────────────────────────────────────────
-
+/// Rounded card with surface background and drop shadow.
 pub fn card_style(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SURFACE)),
@@ -59,6 +57,7 @@ pub fn card_style(_theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Dark sidebar with right-edge shadow.
 pub fn sidebar_style(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SIDEBAR_BG)),
@@ -72,6 +71,7 @@ pub fn sidebar_style(_theme: &iced::Theme) -> container::Style {
     }
 }
 
+/// Bottom status bar with top border.
 pub fn status_bar_style(_theme: &iced::Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(SIDEBAR_BG)),
@@ -90,8 +90,7 @@ pub fn status_bar_style(_theme: &iced::Theme) -> container::Style {
     }
 }
 
-// ── Reusable button styles ─────────────────────────────────────────────────
-
+/// Sidebar navigation button: accent tint when active, transparent otherwise.
 pub fn nav_button_style(active: bool) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     move |_theme, status| {
         let bg = if active {
@@ -115,6 +114,7 @@ pub fn nav_button_style(active: bool) -> impl Fn(&iced::Theme, button::Status) -
     }
 }
 
+/// Small rounded pill button for filter tabs and mode selectors.
 pub fn pill_button(active: bool) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     move |_theme, status| {
         let bg = if active {
@@ -138,6 +138,7 @@ pub fn pill_button(active: bool) -> impl Fn(&iced::Theme, button::Status) -> but
     }
 }
 
+/// Generic action button with custom base and hover colors.
 pub fn action_button(base: Color, hover: Color) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     move |_theme, status| {
         let bg = match status {
@@ -157,6 +158,7 @@ pub fn action_button(base: Color, hover: Color) -> impl Fn(&iced::Theme, button:
     }
 }
 
+/// Accent-colored action button (start actions).
 pub fn accent_action_button() -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     let hover = Color {
         r: ACCENT.r + 0.08,
@@ -167,6 +169,7 @@ pub fn accent_action_button() -> impl Fn(&iced::Theme, button::Status) -> button
     action_button(ACCENT, hover)
 }
 
+/// Red action button (stop/danger actions).
 pub fn danger_action_button() -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     action_button(DANGER, DANGER_HOVER)
 }

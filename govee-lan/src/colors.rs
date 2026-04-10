@@ -1,3 +1,7 @@
+//! Color utilities for RGB manipulation: hex parsing, Euclidean distance,
+//! exponential smoothing, palette interpolation, and saturation adjustment.
+
+/// Parse a `#RRGGBB` hex string into an `(R, G, B)` tuple.
 pub fn hex_to_rgb(hex: &str) -> Option<(u8, u8, u8)> {
     let hex = hex.trim_start_matches('#');
     if hex.len() != 6 || !hex.is_ascii() {
@@ -9,6 +13,7 @@ pub fn hex_to_rgb(hex: &str) -> Option<(u8, u8, u8)> {
     Some((r, g, b))
 }
 
+/// Euclidean distance between two RGB colors in 3D color space.
 pub fn color_distance(c1: (u8, u8, u8), c2: (u8, u8, u8)) -> f64 {
     let dr = c1.0 as f64 - c2.0 as f64;
     let dg = c1.1 as f64 - c2.1 as f64;
@@ -16,6 +21,8 @@ pub fn color_distance(c1: (u8, u8, u8), c2: (u8, u8, u8)) -> f64 {
     (dr * dr + dg * dg + db * db).sqrt()
 }
 
+/// Exponential moving average: `factor` controls how fast `current` chases
+/// `target` (0 = frozen, 1 = instant snap).
 pub fn smooth(current: (f64, f64, f64), target: (u8, u8, u8), factor: f64) -> (f64, f64, f64) {
     (
         current.0 + (target.0 as f64 - current.0) * factor,
@@ -42,6 +49,8 @@ pub fn lerp_color_chain(anchors: &[(u8, u8, u8)], t: f64) -> (u8, u8, u8) {
     )
 }
 
+/// Adjust saturation by scaling each channel's distance from the mean.
+/// Values > 1.0 boost saturation, < 1.0 desaturate.
 pub fn saturate_color(rgb: (u8, u8, u8), amount: f64) -> (u8, u8, u8) {
     let avg = (rgb.0 as f64 + rgb.1 as f64 + rgb.2 as f64) / 3.0;
     let r = (avg + (rgb.0 as f64 - avg) * amount).clamp(0.0, 255.0) as u8;

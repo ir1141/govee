@@ -1,3 +1,6 @@
+//! Audio reactive visualization: captures system audio, analyzes it with FFT,
+//! and drives LED segments in real time via DreamView.
+
 use govee_lan::*;
 use govee_lan::audio::{AudioAnalyzer, map_colors};
 use govee_lan::UdpSender;
@@ -7,6 +10,7 @@ use std::time::{Duration, Instant};
 use crate::cli::AudioArgs;
 use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 
+/// Run the audio-reactive visualization loop.
 pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
     let ip = resolve_or_exit(ip.as_deref());
 

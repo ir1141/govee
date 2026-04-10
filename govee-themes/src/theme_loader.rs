@@ -1,3 +1,6 @@
+//! Theme loader that merges user TOML themes from `~/.config/govee/themes/`
+//! with built-in definitions. User themes with matching names override builtins.
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -34,6 +37,9 @@ fn load_user_themes() -> Vec<ThemeDef> {
     themes
 }
 
+/// Load all themes: builtins merged with user-defined TOML themes.
+///
+/// User themes with the same name as a builtin replace it; otherwise they're appended.
 pub fn load_all_themes() -> Vec<ThemeDef> {
     let mut themes = builtin_themes();
     for ut in load_user_themes() {

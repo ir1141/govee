@@ -1,3 +1,10 @@
+//! Real-time audio analysis via PulseAudio monitor source capture.
+//!
+//! Performs 1024-sample FFT with Hanning windowing, decomposes into 6 frequency
+//! bands, tracks RMS energy with adaptive gain, and provides beat detection.
+//! Four visualization modes (energy, frequency, beat, drop) map analysis state
+//! to per-segment LED colors.
+
 use anyhow::Result;
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
@@ -11,7 +18,7 @@ use rustfft::{FftPlanner, num_complex::Complex};
 use std::thread;
 use std::time::Instant;
 
-/// Which visualization mode to use
+/// Visualization algorithm selection.
 #[derive(Debug, Clone, Copy)]
 pub enum VisMode {
     Energy,
@@ -20,7 +27,7 @@ pub enum VisMode {
     Drop,
 }
 
-/// Color palette for visualization
+/// Color palette for the visualization.
 #[derive(Debug, Clone, Copy)]
 pub enum Palette {
     Fire,
@@ -32,7 +39,7 @@ pub enum Palette {
     Rainbow,
 }
 
-/// Shared state between capture thread and main loop
+/// Shared state between the capture thread and the main rendering loop.
 #[derive(Debug, Clone)]
 pub struct AudioState {
     /// 0.0-1.0 normalized RMS energy
@@ -56,7 +63,7 @@ impl Default for AudioState {
     }
 }
 
-/// Interpolate through palette anchor colors based on intensity (0.0-1.0)
+/// Interpolate through palette anchor colors based on intensity (0.0-1.0).
 pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
     let anchors: &[(u8, u8, u8)] = match palette {
         Palette::Fire => &[
@@ -115,13 +122,18 @@ pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
 
 const SAMPLE_RATE: u32 = 44100;
 const FFT_SIZE: usize = 1024;
-const BUFFER_SIZE: usize = 1024; // ~23ms window for responsive updates
+const BUFFER_SIZE: usize = 1024;
+/// Minimum 200ms between beat triggers to prevent double-counting.
 const BEAT_COOLDOWN_MS: u128 = 200;
+/// Energy must exceed 1.5× the recent average to register as a beat.
 const BEAT_THRESHOLD: f64 = 1.5;
-const ENERGY_HISTORY: usize = 43; // ~1 second at 44100/1024
-const NOISE_GATE: f64 = 5e-3; // squelch: signal below this raw RMS is silence
+/// ~1 second of history at 44100 Hz / 1024-sample frames (~43 frames/sec).
+const ENERGY_HISTORY: usize = 43;
+/// Below this RMS the signal is treated as silence to avoid amplifying noise.
+const NOISE_GATE: f64 = 5e-3;
 
-/// Frequency band boundaries in Hz
+/// Frequency boundaries in Hz for 6 perceptual bands:
+/// sub-bass, bass, low-mid, mid, upper-mid, brilliance.
 const BAND_EDGES: [(f64, f64); 6] = [
     (20.0, 150.0),
     (150.0, 400.0),
@@ -154,6 +166,8 @@ impl ExpFilter {
     }
 }
 
+/// Spawns a background capture thread and provides thread-safe access to the
+/// latest audio analysis state.
 pub struct AudioAnalyzer {
     pub state: Arc<Mutex<AudioState>>,
     thread: Option<thread::JoinHandle<()>>,
@@ -184,6 +198,9 @@ impl AudioAnalyzer {
         })
     }
 
+    /// Returns the latest analysis snapshot.
+    ///
+    /// Recovers gracefully from a poisoned mutex if the capture thread panicked.
     pub fn get_state(&self) -> AudioState {
         self.state.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
@@ -340,7 +357,8 @@ fn capture_loop(
             .sqrt();
 
 
-        // Hanning window + FFT on last FFT_SIZE samples
+        // Hanning window reduces spectral leakage before FFT:
+        // w(n) = 0.5 × (1 − cos(2πn / (N−1)))
         let window_start = samples.len() - FFT_SIZE;
         let mut fft_input: Vec<Complex<f64>> = samples[window_start..]
             .iter()
@@ -461,7 +479,8 @@ fn map_beat(
         *beat_decay = 1.0;
         *beat_hue = (*beat_hue + 0.2) % 1.0;
     } else {
-        *beat_decay *= 0.92; // exponential decay
+        // Exponential decay: 0.92 per frame ≈ 8-frame half-life (~130ms at 60fps)
+        *beat_decay *= 0.92;
     }
 
     let base_intensity = 0.1 + audio.energy * 0.15;
@@ -489,7 +508,8 @@ fn map_drop(
     if bass > TRIGGER {
         *bass_decay = 1.0;
     } else {
-        *bass_decay *= 0.7; // fast fade — stays visible ~4-5 frames then gone
+        // Fast fade: 0.7 per frame ≈ 2-frame half-life — visible ~4-5 frames then gone
+        *bass_decay *= 0.7;
     }
 
     if treble > TRIGGER {

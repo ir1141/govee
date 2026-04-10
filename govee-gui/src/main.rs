@@ -1,3 +1,5 @@
+//! Iced-based GUI frontend for Govee LED strip control.
+
 mod app;
 mod config;
 mod pages;

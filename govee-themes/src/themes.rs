@@ -1,7 +1,11 @@
+//! Core theme types, palette interpolation, HSV conversion, and the behavior engine.
+//!
+//! [`ThemeDef`] pairs a name and category with a [`ThemeKind`] — either a static
+//! solid color or an animated [`Behavior`] with one of 13 animation algorithms.
+
 use serde::{Deserialize, Serialize};
 
-// ── Types ───────────────────────────────────────────────────────────────────
-
+/// An RGB color as `(red, green, blue)` with each channel 0-255.
 pub type Rgb = (u8, u8, u8);
 
 /// Palette anchor: position 0.0–1.0 with an RGB color.
@@ -21,18 +25,20 @@ pub struct WaveParam {
     pub phase_offset: f64,
 }
 
-// ── Helpers for compact builtin definitions ─────────────────────────────────
-
+/// Shorthand constructor for [`PA`] palette anchors.
 pub fn pa(pos: f64, r: u8, g: u8, b: u8) -> PA {
     PA { pos, r, g, b }
 }
 
+/// Shorthand constructor for [`WaveParam`].
 pub fn wp(time_speed: f64, spatial_freq: f64, phase_offset: f64) -> WaveParam {
     WaveParam { time_speed, spatial_freq, phase_offset }
 }
 
-// ── Color utilities ─────────────────────────────────────────────────────────
-
+/// Sample a color from a palette at position `t` (0.0-1.0).
+///
+/// Performs piecewise-linear interpolation between anchors at arbitrary positions
+/// (not necessarily evenly spaced).
 pub fn palette_sample(anchors: &[PA], t: f64) -> Rgb {
     if anchors.is_empty() {
         return (0, 0, 0);
@@ -60,6 +66,7 @@ pub fn palette_sample(anchors: &[PA], t: f64) -> Rgb {
     (l.r, l.g, l.b)
 }
 
+/// Linearly interpolate between two RGB colors. `t` is 0.0-1.0.
 pub fn lerp_rgb(a: Rgb, b: Rgb, t: f64) -> Rgb {
     let t = t.clamp(0.0, 1.0);
     (
@@ -69,6 +76,7 @@ pub fn lerp_rgb(a: Rgb, b: Rgb, t: f64) -> Rgb {
     )
 }
 
+/// Convert HSV to RGB. Hue wraps via `fract()`, saturation and value are 0.0-1.0.
 pub fn hsv_to_rgb(h: f64, s: f64, v: f64) -> Rgb {
     let h = (h.fract() + 1.0).fract() * 6.0;
     let f = h.fract();
@@ -86,18 +94,21 @@ pub fn hsv_to_rgb(h: f64, s: f64, v: f64) -> Rgb {
     ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
 }
 
-// ── Behavior engine ─────────────────────────────────────────────────────────
-
+/// Frame delay between animation steps.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Delay {
+    /// Constant delay in milliseconds.
     Fixed(u64),
+    /// Random delay between `min` and `max` milliseconds.
     Random(u64, u64),
 }
 
+/// Animation algorithm for a theme. Each variant defines a distinct visual behavior.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum Behavior {
+    /// Cellular-automata fire: random perturbation, spark injection, neighbor diffusion.
     Heat {
         palette: Vec<PA>,
         volatility: f64,
@@ -107,16 +118,19 @@ pub enum Behavior {
         dim_range: (f64, f64),
         diffusion: f64,
     },
+    /// Weighted sum of sinusoidal waves sampled through a palette.
     Wave {
         palette: Vec<PA>,
         waves: Vec<WaveParam>,
         weights: Vec<f64>,
     },
+    /// Smooth sine-wave pulsing through a palette.
     Breathe {
         palette: Vec<PA>,
         speed: f64,
         power: u32,
     },
+    /// Random flash bursts over a gently moving base palette.
     Flash {
         base_palette: Vec<PA>,
         flash_palette: Vec<PA>,
@@ -127,6 +141,7 @@ pub enum Behavior {
         base_spatial_freq: f64,
         flash_threshold: f64,
     },
+    /// Particles spawn at one end and drift/fade across the strip.
     Particles {
         bg: Rgb,
         palette: Vec<PA>,
@@ -134,42 +149,50 @@ pub enum Behavior {
         spawn_chance: f64,
         bright_chance: f64,
     },
+    /// Random segments light up and fade out against a background.
     Twinkle {
         bg: Rgb,
         colors: Vec<Rgb>,
         on_chance: f64,
         fade_speed: f64,
     },
+    /// Continuous rainbow hue rotation across the strip.
     HueRotate {
         speed: f64,
         saturation: f64,
         value: f64,
     },
+    /// Sinusoidal lerp between two colors across the strip.
     GradientWave {
         color_a: Rgb,
         color_b: Rgb,
         speed: f64,
     },
+    /// Rapid color cycling with random white flash bursts.
     Strobe {
         colors: Vec<Rgb>,
         cycle_speed: f64,
         flash_chance: f64,
     },
+    /// Repeating color pattern that shifts along the strip with random sparkles.
     Alternating {
         colors: Vec<Rgb>,
         sparkle: Rgb,
         sparkle_chance: f64,
         shift_speed: f64,
     },
+    /// Palette scrolls continuously along the strip.
     Drift {
         palette: Vec<PA>,
         speed: f64,
     },
+    /// Pulse radiates outward from the strip center.
     RadiatePulse {
         color: Rgb,
         speed: f64,
         width: f64,
     },
+    /// Slow one-shot progression through a palette over a set duration.
     Progression {
         palette: Vec<PA>,
         duration_secs: f64,
@@ -177,13 +200,17 @@ pub enum Behavior {
     },
 }
 
+/// Whether a theme is a static solid color or an animated behavior.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "kebab-case")]
 pub enum ThemeKind {
+    /// Single fixed color applied to the entire strip.
     Solid { color: Rgb },
+    /// Continuously animated behavior with a frame delay.
     Animated { behavior: Behavior, delay: Delay },
 }
 
+/// A named theme belonging to a category, with either a solid or animated kind.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ThemeDef {
     pub name: String,

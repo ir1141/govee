@@ -1,3 +1,5 @@
+//! Themes page: filterable grid of theme cards with palette previews and one-click activation.
+
 use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
 use iced::{Border, Color, Element, Length, Shadow, Vector};
 use iced::widget::Row;
@@ -20,7 +22,7 @@ const COLOR_BAND_HEIGHT: f32 = 36.0;
 const CARDS_PER_ROW: usize = 4;
 
 pub fn view(app: &App) -> Element<'_, Message> {
-    // ── Header row ─────────────────────────────────────────────────────────
+    // Header row
     let categories = categories();
     let mut tab_row = row![].spacing(6);
     for &cat in &categories {
@@ -40,7 +42,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .align_y(iced::Alignment::Center)
     .spacing(style::SPACING);
 
-    // ── Stop button (shown when a theme is active) ─────────────────────────
+    // Stop button (shown when a theme is active)
     let mut header_col = column![header].spacing(10);
 
     if app.active_theme.is_some() {
@@ -53,7 +55,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let mut content_col = column![].spacing(16);
 
-    // ── Determine which categories to show ─────────────────────────────────
+    // Determine which categories to show
     let is_custom = |c: &str| !govee_themes::BUILTIN_CATEGORIES.contains(&c);
 
     let display_cats: Vec<String> = if app.theme_filter == "all" {
@@ -76,7 +78,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         vec![app.theme_filter.clone()]
     };
 
-    // ── Build card grid per category ────────────────────────────────────────
+    // Build card grid per category
     for cat in display_cats.iter() {
         let cat_themes: Vec<&govee_themes::ThemeDef> = app
             .themes
@@ -122,6 +124,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .into()
 }
 
+/// Sample up to 4 representative colors from a behavior's palette for card previews.
 fn extract_preview_colors(behavior: &govee_themes::Behavior) -> Vec<Color> {
     use govee_themes::themes::palette_sample;
     use govee_themes::Behavior;
@@ -181,6 +184,7 @@ fn extract_preview_colors(behavior: &govee_themes::Behavior) -> Vec<Color> {
     }
 }
 
+/// Render a single theme card with color band preview and active indicator.
 fn theme_card<'a>(theme: &govee_themes::ThemeDef, is_active: bool) -> Element<'a, Message> {
     let name = theme.name.clone();
 

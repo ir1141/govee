@@ -1,3 +1,9 @@
+//! Wayland screen capture via the `wlr-screencopy-unstable-v1` protocol.
+//!
+//! [`ScreenCapturer`] maintains a persistent Wayland connection and reuses
+//! shared-memory buffers across frames. [`CapturedFrame`] provides histogram-based
+//! dominant-color extraction for ambilight-style LED output.
+
 use anyhow::Result;
 use nix::poll::{poll, PollFd, PollFlags, PollTimeout};
 use nix::sys::memfd::{memfd_create, MemFdCreateFlag};
@@ -13,6 +19,7 @@ use wayland_protocols_wlr::screencopy::v1::client::{
     zwlr_screencopy_frame_v1, zwlr_screencopy_manager_v1,
 };
 
+/// A captured screen frame with raw pixel data and dimensions.
 #[derive(Debug, Clone)]
 pub struct CapturedFrame {
     pub width: u32,
@@ -114,6 +121,7 @@ impl CapturedFrame {
                     let b = self.data[offset];
                     let g = self.data[offset + 1];
                     let r = self.data[offset + 2];
+                    // Rec. 601 luma: (0.299, 0.587, 0.114) × 256 = (77, 150, 29). >> 8 divides by 256.
                     let lum = ((77 * r as u32 + 150 * g as u32 + 29 * b as u32) >> 8) as usize;
 
                     let acc = &mut accums[seg_idx];
@@ -133,8 +141,6 @@ impl CapturedFrame {
     }
 }
 
-// --- Wayland state machine ---
-
 struct FrameState {
     width: u32,
     height: u32,
@@ -145,7 +151,7 @@ struct FrameState {
     buffer_info_received: bool,
 }
 
-/// Persistent shm buffer reused across captures.
+/// Persistent shared-memory buffer reused across captures to avoid per-frame allocation.
 struct ShmBuffer {
     ptr: *mut u8,
     size: usize,
@@ -161,6 +167,9 @@ impl ShmBuffer {
         let fd = memfd_create(&name, MemFdCreateFlag::MFD_CLOEXEC).map_err(|_| ())?;
         nix::unistd::ftruncate(&fd, size as i64).map_err(|_| ())?;
 
+        // SAFETY: `fd` is a valid memfd we just created, `size` is non-zero (checked
+        // by NonZeroUsize). MAP_SHARED on a memfd is well-defined. The pointer is used
+        // only within ShmBuffer's lifetime and unmapped in Drop.
         let ptr = unsafe {
             mmap(
                 None,
@@ -183,6 +192,8 @@ impl ShmBuffer {
 
 impl Drop for ShmBuffer {
     fn drop(&mut self) {
+        // SAFETY: `self.ptr` was returned by mmap in `new()` and `self.size` is the
+        // original mapping length. Called exactly once via Drop.
         unsafe {
             let _ = munmap(
                 std::ptr::NonNull::new(self.ptr as *mut std::ffi::c_void)
@@ -396,7 +407,8 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
 delegate_noop!(WaylandState: ignore wl_shm_pool::WlShmPool);
 delegate_noop!(WaylandState: ignore wl_buffer::WlBuffer);
 
-/// A reusable screen capturer that holds the Wayland connection open.
+/// Persistent screen capturer that holds the Wayland connection open and reuses
+/// shm buffers across frames.
 pub struct ScreenCapturer {
     _conn: Connection,
     queue: EventQueue<WaylandState>,
@@ -404,6 +416,7 @@ pub struct ScreenCapturer {
 }
 
 impl ScreenCapturer {
+    /// Connect to the Wayland compositor and bind screencopy globals.
     pub fn new() -> Result<Self> {
         let conn = Connection::connect_to_env()?;
         let display = conn.display();
