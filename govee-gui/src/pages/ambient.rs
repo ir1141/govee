@@ -1,5 +1,3 @@
-//! Ambient sync settings page: brightness and dim toggle for Caelestia wallpaper sync.
-
 use iced::widget::{column, container, horizontal_space, row, text, toggler};
 use iced::{Alignment, Element};
 use crate::app::{App, Message};

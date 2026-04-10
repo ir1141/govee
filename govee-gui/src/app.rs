@@ -111,17 +111,63 @@ impl App {
     }
 
     /// If the given mode is currently running, restart its subprocess with current config.
-    fn restart_if_active(&mut self, mode: &str) -> Task<Message> {
-        if self.active_mode.as_deref() == Some(mode) {
-            match mode {
-                "screen" => return self.update(Message::StartScreen),
-                "audio" => return self.update(Message::StartAudio),
-                "ambient" => return self.update(Message::StartAmbient),
-                "sunlight" => return self.update(Message::StartSunlight),
-                _ => {}
-            }
+    fn restart_if_active(&mut self, mode: &str) {
+        if self.active_mode.as_deref() != Some(mode) {
+            return;
         }
-        Task::none()
+        match mode {
+            "screen" => {
+                let s = &self.config.screen;
+                self.start_subprocess("screen", vec![
+                    "screen".into(),
+                    "--fps".into(), s.fps.to_string(),
+                    "--brightness".into(), s.brightness.to_string(),
+                    "--segments".into(), s.segments.to_string(),
+                ]);
+            }
+            "audio" => {
+                let a = &self.config.audio;
+                let mut args = vec![
+                    "audio".into(),
+                    "--mode".into(), a.mode.clone(),
+                    "--palette".into(), a.palette.clone(),
+                    "--brightness".into(), a.brightness.to_string(),
+                    "--segments".into(), a.segments.to_string(),
+                    "--sensitivity".into(), a.sensitivity.to_string(),
+                ];
+                if a.gradient { args.push("--gradient".into()); }
+                self.start_subprocess("audio", args);
+            }
+            "ambient" => {
+                let amb = &self.config.ambient;
+                let mut args = vec![
+                    "ambient".into(),
+                    "--brightness".into(), amb.brightness.to_string(),
+                ];
+                if amb.dim { args.push("--dim".into()); }
+                self.start_subprocess("ambient", args);
+            }
+            "sunlight" => {
+                let s = &self.config.sunlight;
+                let mut args = vec![
+                    "sunlight".into(),
+                    "--preset".into(), s.preset.clone(),
+                    "--brightness".into(), s.brightness.to_string(),
+                    "--segments".into(), s.segments.to_string(),
+                    "--transition".into(), s.transition.to_string(),
+                ];
+                if let (Some(lat), Some(lon)) = (s.lat, s.lon) {
+                    args.extend(["--lat".into(), lat.to_string(), "--lon".into(), lon.to_string()]);
+                } else if let (Some(rise), Some(set)) = (&s.sunrise, &s.sunset) {
+                    args.extend(["--sunrise".into(), rise.clone(), "--sunset".into(), set.clone()]);
+                }
+                if s.preset == "simple" {
+                    args.extend(["--day-temp".into(), s.day_temp.to_string(), "--night-temp".into(), s.night_temp.to_string()]);
+                }
+                self.start_subprocess("sunlight", args);
+            }
+            _ => {}
+        }
     }
 
     /// Spawn a govee CLI subprocess for a continuous mode.
@@ -344,22 +390,22 @@ impl App {
             Message::SetScreenFps(v) => { self.config.screen.fps = v; }
             Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; }
             Message::SetScreenSegments(v) => { self.config.screen.segments = v; }
-            Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); return self.restart_if_active("audio"); }
-            Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); return self.restart_if_active("audio"); }
+            Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); self.restart_if_active("audio"); }
+            Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); self.restart_if_active("audio"); }
             Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; }
             Message::SetAudioSensitivity(v) => { self.config.audio.sensitivity = v as f64 / 10.0; }
             Message::SetAudioSegments(v) => { self.config.audio.segments = v; }
-            Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); return self.restart_if_active("audio"); }
+            Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); self.restart_if_active("audio"); }
             Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; }
             Message::SaveConfig => { self.config.save(); }
-            Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); return self.restart_if_active("ambient"); }
+            Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); self.restart_if_active("ambient"); }
             Message::ToggleMirror(v) => {
                 self.mirror = v;
                 self.config.screen.mirror = v;
                 self.config.audio.mirror = v;
                 self.config.save();
                 if let Some(mode) = self.active_mode.clone() {
-                    return self.restart_if_active(&mode);
+                    self.restart_if_active(&mode);
                 }
             }
             Message::StartScreen => {
@@ -384,7 +430,7 @@ impl App {
                 if a.gradient { args.push("--gradient".into()); }
                 self.start_subprocess("audio", args);
             }
-            Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); return self.restart_if_active("sunlight"); }
+            Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); self.restart_if_active("sunlight"); }
             Message::SetSunlightBrightness(v) => { self.config.sunlight.brightness = v; }
             Message::SetSunlightSegments(v) => { self.config.sunlight.segments = v; }
             Message::SetSunlightTransition(v) => { self.config.sunlight.transition = v; }
@@ -407,10 +453,10 @@ impl App {
                 }
                 self.start_subprocess("sunlight", args);
             }
-            Message::ApplyScreenSettings => { self.config.save(); return self.restart_if_active("screen"); }
-            Message::ApplyAudioSettings => { self.config.save(); return self.restart_if_active("audio"); }
-            Message::ApplyAmbientSettings => { self.config.save(); return self.restart_if_active("ambient"); }
-            Message::ApplySunlightSettings => { self.config.save(); return self.restart_if_active("sunlight"); }
+            Message::ApplyScreenSettings => { self.config.save(); self.restart_if_active("screen"); }
+            Message::ApplyAudioSettings => { self.config.save(); self.restart_if_active("audio"); }
+            Message::ApplyAmbientSettings => { self.config.save(); self.restart_if_active("ambient"); }
+            Message::ApplySunlightSettings => { self.config.save(); self.restart_if_active("sunlight"); }
             Message::StartAmbient => {
                 let amb = &self.config.ambient;
                 let mut args = vec![

@@ -1,5 +1,3 @@
-//! Card-style slider widgets for numeric settings, with save-on-release behavior.
-
 use iced::widget::{column, container, horizontal_space, row, slider, text};
 use iced::{Alignment, Element, Length};
 use crate::app::Message;

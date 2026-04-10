@@ -1,5 +1,3 @@
-//! Screen capture settings page: FPS, brightness, and segment count controls.
-
 use iced::widget::{column, container, horizontal_space, row, slider, text};
 use iced::{Alignment, Element, Length};
 use crate::app::{App, Message};

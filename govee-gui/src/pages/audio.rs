@@ -1,6 +1,3 @@
-//! Audio visualizer settings page: mode selection, palette, brightness,
-//! sensitivity, segments, and gradient toggle.
-
 use iced::widget::{button, column, container, horizontal_space, row, slider, text, toggler};
 use iced::{Alignment, Element, Length};
 use crate::app::{App, Message};

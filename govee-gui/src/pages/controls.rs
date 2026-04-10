@@ -1,5 +1,3 @@
-//! Controls page: power toggle, brightness slider, color presets, and color temperature.
-
 use iced::widget::{button, column, container, horizontal_space, row, slider, text, toggler};
 use iced::{Alignment, Color, Element, Length};
 use crate::app::{App, Message};
