@@ -14,17 +14,31 @@ use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
 /// then merge for finer color resolution within the device's segment limit.
 const OVERSAMPLE: usize = 4;
 
-/// Merge oversampled colors down to `n` segments by averaging adjacent groups.
+/// Merge oversampled colors down to `n` segments by averaging each group.
+/// Splits the input into `n` contiguous slices using integer scaling so that
+/// remainder pixels are distributed evenly instead of dropped, and tolerates
+/// `colors.len() < n` (including empty) without panicking.
 fn merge_segments(colors: &[(u8, u8, u8)], n: usize) -> Vec<(u8, u8, u8)> {
-    colors
-        .chunks(colors.len() / n.max(1))
-        .take(n)
-        .map(|chunk| {
+    if n == 0 {
+        return Vec::new();
+    }
+    if colors.is_empty() {
+        return vec![(0, 0, 0); n];
+    }
+    let len = colors.len();
+    (0..n)
+        .map(|i| {
+            let start = len * i / n;
+            let mut end = len * (i + 1) / n;
+            if end <= start {
+                end = (start + 1).min(len);
+            }
+            let chunk = &colors[start..end];
             let (r, g, b) = chunk.iter().fold((0u32, 0u32, 0u32), |(r, g, b), &(cr, cg, cb)| {
                 (r + cr as u32, g + cg as u32, b + cb as u32)
             });
-            let len = chunk.len() as u32;
-            ((r / len) as u8, (g / len) as u8, (b / len) as u8)
+            let clen = chunk.len() as u32;
+            ((r / clen) as u8, (g / clen) as u8, (b / clen) as u8)
         })
         .collect()
 }
@@ -152,4 +166,37 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
     }
 
     crate::dreamview::shutdown(&ip, use_razer);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn merge_segments_even_chunks() {
+        let colors = vec![
+            (10, 0, 0), (30, 0, 0),
+            (0, 10, 0), (0, 30, 0),
+        ];
+        assert_eq!(merge_segments(&colors, 2), vec![(20, 0, 0), (0, 20, 0)]);
+    }
+
+    #[test]
+    fn merge_segments_fewer_inputs_than_n() {
+        // Should not panic and should produce n outputs.
+        let colors = vec![(100, 100, 100), (200, 200, 200)];
+        let out = merge_segments(&colors, 5);
+        assert_eq!(out.len(), 5);
+    }
+
+    #[test]
+    fn merge_segments_empty_input() {
+        let out = merge_segments(&[], 4);
+        assert_eq!(out, vec![(0, 0, 0); 4]);
+    }
+
+    #[test]
+    fn merge_segments_zero_n() {
+        assert!(merge_segments(&[(1, 2, 3)], 0).is_empty());
+    }
 }

@@ -3,6 +3,28 @@
 //! night) and smoothly blend between them during sunrise/sunset transitions.
 
 use chrono::{Local, NaiveTime, Timelike};
+
+const MINUTES_PER_DAY: i32 = 24 * 60;
+
+fn minutes_of_day(t: NaiveTime) -> i32 {
+    (t.hour() * 60 + t.minute()) as i32
+}
+
+/// If `now` falls inside the window `[start, end)` on a circular 24h clock,
+/// return its progress through the window in `[0.0, 1.0]`. The window may
+/// cross midnight in either direction.
+fn window_progress(now: i32, start: i32, end: i32) -> Option<f64> {
+    let width = (end - start).rem_euclid(MINUTES_PER_DAY);
+    if width == 0 {
+        return None;
+    }
+    let offset = (now - start).rem_euclid(MINUTES_PER_DAY);
+    if offset < width {
+        Some(offset as f64 / width as f64)
+    } else {
+        None
+    }
+}
 use govee_lan::{send_brightness, send_color_temp, UdpSender};
 use govee_themes::themes::{pa, wp, Behavior, Delay, Rgb};
 use std::time::Duration;
@@ -29,40 +51,44 @@ struct Preset {
 }
 
 /// Compute the current solar phase given local time and sunrise/sunset.
+///
+/// All windows are computed with wrap-aware modular arithmetic so that a
+/// transition straddling midnight (e.g. sunset 23:50 with a 60min window)
+/// resolves correctly rather than underflowing.
 pub fn solar_phase(
     now: NaiveTime,
     sunrise: NaiveTime,
     sunset: NaiveTime,
     transition_mins: u32,
 ) -> SolarPhase {
-    let half = chrono::TimeDelta::minutes(transition_mins as i64 / 2);
+    let half = (transition_mins as i32) / 2;
+    let now_m = minutes_of_day(now);
+    let sunrise_m = minutes_of_day(sunrise);
+    let sunset_m = minutes_of_day(sunset);
 
-    let sunrise_start = sunrise - half;
-    let sunrise_end = sunrise + half;
-    let sunset_start = sunset - half;
-    let sunset_end = sunset + half;
+    let sunrise_start = (sunrise_m - half).rem_euclid(MINUTES_PER_DAY);
+    let sunrise_end = (sunrise_m + half).rem_euclid(MINUTES_PER_DAY);
+    let sunset_start = (sunset_m - half).rem_euclid(MINUTES_PER_DAY);
+    let sunset_end = (sunset_m + half).rem_euclid(MINUTES_PER_DAY);
 
-    if now >= sunrise_end && now < sunset_start {
+    if let Some(t) = window_progress(now_m, sunrise_start, sunrise_end) {
+        SolarPhase::Dawn(t.clamp(0.0, 1.0))
+    } else if let Some(t) = window_progress(now_m, sunset_start, sunset_end) {
+        SolarPhase::Dusk(t.clamp(0.0, 1.0))
+    } else if window_progress(now_m, sunrise_end, sunset_start).is_some() {
         SolarPhase::Day
-    } else if now >= sunrise_start && now < sunrise_end {
-        let total = (sunrise_end - sunrise_start).num_seconds() as f64;
-        let elapsed = (now - sunrise_start).num_seconds() as f64;
-        SolarPhase::Dawn((elapsed / total).clamp(0.0, 1.0))
-    } else if now >= sunset_start && now < sunset_end {
-        let total = (sunset_end - sunset_start).num_seconds() as f64;
-        let elapsed = (now - sunset_start).num_seconds() as f64;
-        SolarPhase::Dusk((elapsed / total).clamp(0.0, 1.0))
     } else {
         SolarPhase::Night
     }
 }
 
 /// Compute sunrise/sunset times from latitude/longitude for the current date.
-fn solar_times(lat: f64, lon: f64) -> (NaiveTime, NaiveTime) {
+fn solar_times(lat: f64, lon: f64) -> Result<(NaiveTime, NaiveTime), String> {
     use sunrise::{Coordinates, SolarDay, SolarEvent};
 
     let today = Local::now().date_naive();
-    let coord = Coordinates::new(lat, lon).expect("invalid coordinates");
+    let coord = Coordinates::new(lat, lon)
+        .ok_or_else(|| format!("invalid coordinates: lat={lat}, lon={lon}"))?;
     let solar = SolarDay::new(coord, today);
 
     let rise_utc = solar.event_time(SolarEvent::Sunrise);
@@ -71,28 +97,22 @@ fn solar_times(lat: f64, lon: f64) -> (NaiveTime, NaiveTime) {
     let rise_local = rise_utc.with_timezone(&Local).time();
     let set_local = set_utc.with_timezone(&Local).time();
 
-    (rise_local, set_local)
+    Ok((rise_local, set_local))
 }
 
 /// Parse "HH:MM" into a NaiveTime.
-fn parse_time(s: &str) -> NaiveTime {
-    let parts: Vec<&str> = s.split(':').collect();
-    if parts.len() != 2 {
-        crate::ui::error_hint("Invalid time format", "Expected HH:MM (e.g. 07:00)");
-        std::process::exit(1);
-    }
-    let h: u32 = parts[0].parse().unwrap_or_else(|_| {
-        crate::ui::error_hint("Invalid hour", "Expected HH:MM");
-        std::process::exit(1);
-    });
-    let m: u32 = parts[1].parse().unwrap_or_else(|_| {
-        crate::ui::error_hint("Invalid minute", "Expected HH:MM");
-        std::process::exit(1);
-    });
-    NaiveTime::from_hms_opt(h, m, 0).unwrap_or_else(|| {
-        crate::ui::error_hint("Invalid time", "Hour 0-23, minute 0-59");
-        std::process::exit(1);
-    })
+fn parse_time(s: &str) -> Result<NaiveTime, String> {
+    let (h_str, m_str) = s
+        .split_once(':')
+        .ok_or_else(|| format!("invalid time '{s}': expected HH:MM"))?;
+    let h: u32 = h_str
+        .parse()
+        .map_err(|_| format!("invalid hour '{h_str}': expected HH:MM"))?;
+    let m: u32 = m_str
+        .parse()
+        .map_err(|_| format!("invalid minute '{m_str}': expected HH:MM"))?;
+    NaiveTime::from_hms_opt(h, m, 0)
+        .ok_or_else(|| format!("invalid time {h:02}:{m:02}: hour 0-23, minute 0-59"))
 }
 
 /// Linearly blend two segment color arrays.
@@ -197,26 +217,18 @@ fn get_preset(preset: CliSunlightPreset) -> Preset {
 }
 
 /// Resolve sunrise/sunset times from args (manual or solar calculation).
-fn resolve_times(args: &SunlightArgs) -> (NaiveTime, NaiveTime) {
+fn resolve_times(args: &SunlightArgs) -> Result<(NaiveTime, NaiveTime), String> {
     match (&args.sunrise, &args.sunset) {
-        (Some(rise), Some(set)) => (parse_time(rise), parse_time(set)),
+        (Some(rise), Some(set)) => Ok((parse_time(rise)?, parse_time(set)?)),
         _ => match (args.lat, args.lon) {
             (Some(lat), Some(lon)) => solar_times(lat, lon),
-            _ => {
-                crate::ui::error_hint(
-                    "No location info",
-                    "Provide --lat/--lon or --sunrise/--sunset",
-                );
-                std::process::exit(1);
-            }
+            _ => Err("no location info: provide --lat/--lon or --sunrise/--sunset".into()),
         },
     }
 }
 
 /// Run the simple (flat Kelvin) sunlight loop.
-fn run_simple_loop(args: &SunlightArgs, ip: &str) {
-    let (sunrise, sunset) = resolve_times(args);
-
+fn run_simple_loop(args: &SunlightArgs, ip: &str, sunrise: NaiveTime, sunset: NaiveTime) {
     crate::ui::info(
         "Sunlight",
         &format!("simple · {}K day / {}K night", args.day_temp, args.night_temp),
@@ -300,16 +312,17 @@ fn run_simple_loop(args: &SunlightArgs, ip: &str) {
         // Recalculate solar times at midnight if using lat/lon
         if now.hour() == 0 && now.minute() == 0 {
             if let (Some(lat), Some(lon)) = (args.lat, args.lon) {
-                let (new_rise, new_set) = solar_times(lat, lon);
-                if args.verbose {
-                    crate::ui::info(
-                        "Solar",
-                        &format!(
-                            "recalculated: rise {} · set {}",
-                            new_rise.format("%H:%M"),
-                            new_set.format("%H:%M")
-                        ),
-                    );
+                if let Ok((new_rise, new_set)) = solar_times(lat, lon) {
+                    if args.verbose {
+                        crate::ui::info(
+                            "Solar",
+                            &format!(
+                                "recalculated: rise {} · set {}",
+                                new_rise.format("%H:%M"),
+                                new_set.format("%H:%M")
+                            ),
+                        );
+                    }
                 }
             }
         }
@@ -317,9 +330,14 @@ fn run_simple_loop(args: &SunlightArgs, ip: &str) {
 }
 
 /// Run the animated (DreamView crossfade) sunlight loop.
-fn run_animated_loop(args: &SunlightArgs, ip: &str, mirror: bool) {
+fn run_animated_loop(
+    args: &SunlightArgs,
+    ip: &str,
+    mirror: bool,
+    sunrise: NaiveTime,
+    sunset: NaiveTime,
+) {
     let preset = get_preset(args.preset);
-    let (sunrise, sunset) = resolve_times(args);
     let n_seg = args.segments;
 
     let preset_name = match args.preset {
@@ -369,18 +387,19 @@ fn run_animated_loop(args: &SunlightArgs, ip: &str, mirror: bool) {
         // Recalculate solar times on date change
         if now.date_naive() != last_date {
             if let (Some(lat), Some(lon)) = (args.lat, args.lon) {
-                let (new_rise, new_set) = solar_times(lat, lon);
-                current_sunrise = new_rise;
-                current_sunset = new_set;
-                if args.verbose {
-                    crate::ui::info(
-                        "Solar",
-                        &format!(
-                            "recalculated: rise {} · set {}",
-                            new_rise.format("%H:%M"),
-                            new_set.format("%H:%M")
-                        ),
-                    );
+                if let Ok((new_rise, new_set)) = solar_times(lat, lon) {
+                    current_sunrise = new_rise;
+                    current_sunset = new_set;
+                    if args.verbose {
+                        crate::ui::info(
+                            "Solar",
+                            &format!(
+                                "recalculated: rise {} · set {}",
+                                new_rise.format("%H:%M"),
+                                new_set.format("%H:%M")
+                            ),
+                        );
+                    }
                 }
             }
             last_date = now.date_naive();
@@ -443,9 +462,17 @@ pub fn run_sunlight(args: SunlightArgs, ip: Option<String>, mirror: bool) {
     let ip = resolve_or_exit(ip.as_deref());
     ctrlc_setup();
 
+    let (sunrise, sunset) = match resolve_times(&args) {
+        Ok(times) => times,
+        Err(msg) => {
+            crate::ui::error_hint(&msg, "Provide --lat/--lon or --sunrise/--sunset (HH:MM)");
+            std::process::exit(1);
+        }
+    };
+
     match args.preset {
-        CliSunlightPreset::Simple => run_simple_loop(&args, &ip),
-        _ => run_animated_loop(&args, &ip, mirror),
+        CliSunlightPreset::Simple => run_simple_loop(&args, &ip, sunrise, sunset),
+        _ => run_animated_loop(&args, &ip, mirror, sunrise, sunset),
     }
 }
 
@@ -511,6 +538,40 @@ mod tests {
         match phase {
             SolarPhase::Dusk(t) => assert!(t > 0.95),
             other => panic!("expected Dusk(~1), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_solar_phase_dusk_wraps_past_midnight() {
+        // Sunset 23:50 with 60min transition → dusk window is 23:20–00:20.
+        // 00:00 is 40min into the window → t ≈ 0.67.
+        let phase = solar_phase(t(0, 0), t(7, 0), t(23, 50), 60);
+        match phase {
+            SolarPhase::Dusk(t) => assert!((t - 2.0 / 3.0).abs() < 0.05),
+            other => panic!("expected Dusk, got {other:?}"),
+        }
+        // 00:30 is past the dusk window → Night.
+        assert_eq!(
+            solar_phase(t(0, 30), t(7, 0), t(23, 50), 60),
+            SolarPhase::Night
+        );
+        // 23:30 is 10min into the window → t ≈ 0.17.
+        match solar_phase(t(23, 30), t(7, 0), t(23, 50), 60) {
+            SolarPhase::Dusk(t) => assert!((t - 1.0 / 6.0).abs() < 0.05),
+            other => panic!("expected Dusk, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_solar_phase_dawn_wraps_past_midnight() {
+        // Sunrise 00:10 with 60min transition → dawn window is 23:40–00:40.
+        match solar_phase(t(23, 55), t(0, 10), t(12, 0), 60) {
+            SolarPhase::Dawn(t) => assert!((t - 0.25).abs() < 0.05),
+            other => panic!("expected Dawn, got {other:?}"),
+        }
+        match solar_phase(t(0, 25), t(0, 10), t(12, 0), 60) {
+            SolarPhase::Dawn(t) => assert!((t - 0.75).abs() < 0.05),
+            other => panic!("expected Dawn, got {other:?}"),
         }
     }
 

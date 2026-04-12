@@ -28,9 +28,7 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
                 &format!("Failed to start audio capture: {e}"),
                 "Make sure PulseAudio is running and audio is playing",
             );
-            if use_razer {
-                let _ = razer_deactivate(&ip);
-            }
+            crate::dreamview::shutdown(&ip, use_razer);
             process::exit(1);
         }
     };
