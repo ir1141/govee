@@ -3,7 +3,7 @@
 //! The GUI delegates continuous modes (themes, screen, audio, ambient) to CLI
 //! subprocesses and sends SIGTERM for clean shutdown.
 
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 
 /// Locate the `govee` CLI binary: prefer a sibling to the running executable,
 /// fall back to PATH.
@@ -25,6 +25,12 @@ pub fn spawn_govee(args: &[&str], device_ip: Option<&str>) -> std::io::Result<Ch
         cmd.arg("--ip").arg(ip);
     }
     cmd.args(args);
+    // GUI-launched continuous modes write terminal status lines forever.
+    // Detach stdio so a non-interactive parent cannot block the child once
+    // output buffers fill up.
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
     cmd.spawn()
 }
 

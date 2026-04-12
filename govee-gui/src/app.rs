@@ -547,6 +547,12 @@ impl App {
                 self.theme_filter = filter;
             }
             Message::Tick => {
+                if let Some(ref mut child) = self.subprocess {
+                    if child.try_wait().ok().flatten().is_some() {
+                        self.stop_subprocess();
+                        return Task::none();
+                    }
+                }
                 if let Some(start) = self.subprocess_start {
                     self.elapsed_secs = start.elapsed().as_secs();
                 }
