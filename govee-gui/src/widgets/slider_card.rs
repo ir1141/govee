@@ -42,15 +42,16 @@ pub fn segments_card<'a>(
     on_change: impl Fn(usize) -> Message + 'a,
     release_msg: Message,
 ) -> Element<'a, Message> {
+    let clamped = value.min(crate::config::MAX_SEGMENTS) as u8;
     container(
         column![
             row![
                 text("Segments").size(14).color(style::TEXT_PRIMARY),
                 horizontal_space(),
-                text(format!("{value}")).size(14).color(style::TEXT_SECONDARY),
+                text(format!("{clamped}")).size(14).color(style::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
-            slider(1u8..=15u8, value as u8, move |v| on_change(v as usize))
+            slider(1u8..=crate::config::MAX_SEGMENTS as u8, clamped, move |v| on_change(v as usize))
                 .on_release(release_msg)
                 .width(Length::Fill),
         ]

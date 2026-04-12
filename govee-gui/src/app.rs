@@ -8,9 +8,128 @@ use govee_themes::{ThemeDef, ThemeKind, load_all_themes};
 use iced::widget::{column, container, row};
 use iced::{Element, Length, Task};
 use std::time::Duration;
-use crate::config::GuiConfig;
+use crate::config::{GuiConfig, MAX_SEGMENTS};
 use crate::pages;
 use crate::widgets::{sidebar, status_bar};
+
+/// Transient text buffers for the sunlight page's four text inputs.
+/// Never persisted — the parsed, validated values live on `config.sunlight`.
+#[derive(Debug, Clone, Default)]
+pub struct SunlightInputs {
+    pub lat: String,
+    pub lon: String,
+    pub sunrise: String,
+    pub sunset: String,
+}
+
+/// Inline error messages for the sunlight text inputs.
+/// `None` means either Valid or Incomplete — only hard-Invalid renders.
+#[derive(Debug, Clone, Default)]
+pub struct SunlightInputErrors {
+    pub lat: Option<String>,
+    pub lon: Option<String>,
+    pub sunrise: Option<String>,
+    pub sunset: Option<String>,
+}
+
+/// Tri-state result for per-keystroke validation of a text input.
+enum TriState<T> {
+    /// Parses cleanly AND inside range — save and clear the error.
+    Valid(T),
+    /// Prefix of something that could still become valid — clear error, don't save.
+    Incomplete,
+    /// Cannot become valid with more characters — render the error, don't save.
+    Invalid(String),
+}
+
+/// Commit a tri-state validation result into `slot`/`err`.
+/// Returns true iff the value was `Valid` (caller should then persist).
+fn apply_tristate<T>(
+    result: TriState<T>,
+    slot: &mut Option<T>,
+    err: &mut Option<String>,
+) -> bool {
+    match result {
+        TriState::Valid(v) => { *slot = Some(v); *err = None; true }
+        TriState::Incomplete => { *err = None; false }
+        TriState::Invalid(e) => { *err = Some(e); false }
+    }
+}
+
+/// Validate a latitude or longitude text input.
+/// `bound` is the absolute limit (90.0 for lat, 180.0 for lon).
+fn validate_latlon(s: &str, bound: f64, label: &str) -> TriState<f64> {
+    let t = s.trim();
+    if t.is_empty() || t == "-" || t == "." || t == "-." {
+        return TriState::Incomplete;
+    }
+    match t.parse::<f64>() {
+        Ok(v) if v.is_finite() && v.abs() <= bound => TriState::Valid(v),
+        Ok(_) => TriState::Invalid(format!("{label} must be in [-{bound}, {bound}]")),
+        Err(_) => TriState::Invalid(format!("{label} is not a number")),
+    }
+}
+
+/// Validate an HH:MM time input.
+/// Incomplete = strict prefix of some valid "HH:MM" (00:00 .. 23:59);
+/// Valid = full "HH:MM" matching that range; anything else = Invalid.
+fn validate_time(s: &str) -> TriState<String> {
+    let t = s;
+    let bytes = t.as_bytes();
+
+    fn hh_first_ok(c: u8) -> bool { matches!(c, b'0'..=b'2') }
+    fn digit(c: u8) -> bool { c.is_ascii_digit() }
+
+    match bytes.len() {
+        0 => TriState::Incomplete,
+        1 => {
+            if hh_first_ok(bytes[0]) {
+                TriState::Incomplete
+            } else {
+                TriState::Invalid("expected HH:MM".into())
+            }
+        }
+        2 => {
+            if digit(bytes[0]) && digit(bytes[1]) {
+                let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
+                if h <= 23 { TriState::Incomplete } else { TriState::Invalid("hour 00-23".into()) }
+            } else {
+                TriState::Invalid("expected HH:MM".into())
+            }
+        }
+        3 => {
+            if digit(bytes[0]) && digit(bytes[1]) && bytes[2] == b':' {
+                let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
+                if h <= 23 { TriState::Incomplete } else { TriState::Invalid("hour 00-23".into()) }
+            } else {
+                TriState::Invalid("expected HH:MM".into())
+            }
+        }
+        4 => {
+            if digit(bytes[0]) && digit(bytes[1]) && bytes[2] == b':' && digit(bytes[3]) {
+                let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
+                let m_hi = bytes[3] - b'0';
+                if h <= 23 && m_hi <= 5 { TriState::Incomplete } else { TriState::Invalid("hour 00-23, minute 00-59".into()) }
+            } else {
+                TriState::Invalid("expected HH:MM".into())
+            }
+        }
+        5 => {
+            if digit(bytes[0]) && digit(bytes[1]) && bytes[2] == b':' && digit(bytes[3]) && digit(bytes[4]) {
+                let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
+                let m = (bytes[3] - b'0') * 10 + (bytes[4] - b'0');
+                if h <= 23 && m <= 59 {
+                    TriState::Valid(t.to_string())
+                } else {
+                    TriState::Invalid("hour 00-23, minute 00-59".into())
+                }
+            } else {
+                TriState::Invalid("expected HH:MM".into())
+            }
+        }
+        _ => TriState::Invalid("expected HH:MM".into()),
+    }
+}
 
 /// Navigation pages in the sidebar.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,6 +185,16 @@ pub enum Message {
     SetSunlightSegments(usize),
     SetSunlightTransition(u32),
     StartSunlight,
+    SetSunlightUseLocation(bool),
+    EditSunlightLat(String),
+    EditSunlightLon(String),
+    EditSunlightSunrise(String),
+    EditSunlightSunset(String),
+    SubmitSunlightCoords,
+    SetSunlightDayTemp(u16),
+    SetSunlightNightTemp(u16),
+    ToggleSunlightNightBrightnessOverride(bool),
+    SetSunlightNightBrightness(u8),
 
     ToggleMirror(bool),
     SaveConfig,
@@ -95,9 +224,47 @@ pub struct App {
     pub elapsed_secs: u64,
     pub subprocess_start: Option<std::time::Instant>,
     pub mirror: bool,
+    pub sunlight_inputs: SunlightInputs,
+    pub sunlight_errors: SunlightInputErrors,
 }
 
 impl App {
+    /// Populate `sunlight_errors` for the currently active mode (location or manual)
+    /// from the current input buffers, flagging any missing/invalid pair.
+    fn populate_sunlight_errors_from_inputs(&mut self) {
+        if self.config.sunlight.use_location {
+            if self.config.sunlight.lat.is_none() {
+                if let TriState::Invalid(e) = validate_latlon(&self.sunlight_inputs.lat, 90.0, "latitude") {
+                    self.sunlight_errors.lat = Some(e);
+                } else {
+                    self.sunlight_errors.lat = Some("set latitude".into());
+                }
+            }
+            if self.config.sunlight.lon.is_none() {
+                if let TriState::Invalid(e) = validate_latlon(&self.sunlight_inputs.lon, 180.0, "longitude") {
+                    self.sunlight_errors.lon = Some(e);
+                } else {
+                    self.sunlight_errors.lon = Some("set longitude".into());
+                }
+            }
+        } else {
+            if self.config.sunlight.sunrise.is_none() {
+                if let TriState::Invalid(e) = validate_time(&self.sunlight_inputs.sunrise) {
+                    self.sunlight_errors.sunrise = Some(e);
+                } else {
+                    self.sunlight_errors.sunrise = Some("set sunrise HH:MM".into());
+                }
+            }
+            if self.config.sunlight.sunset.is_none() {
+                if let TriState::Invalid(e) = validate_time(&self.sunlight_inputs.sunset) {
+                    self.sunlight_errors.sunset = Some(e);
+                } else {
+                    self.sunlight_errors.sunset = Some("set sunset HH:MM".into());
+                }
+            }
+        }
+    }
+
     /// Kill the current subprocess and clear associated state.
     fn stop_subprocess(&mut self) {
         if let Some(ref mut child) = self.subprocess {
@@ -148,22 +315,11 @@ impl App {
                 self.start_subprocess("ambient", args);
             }
             "sunlight" => {
-                let s = &self.config.sunlight;
-                let mut args = vec![
-                    "sunlight".into(),
-                    "--preset".into(), s.preset.clone(),
-                    "--brightness".into(), s.brightness.to_string(),
-                    "--segments".into(), s.segments.to_string(),
-                    "--transition".into(), s.transition.to_string(),
-                ];
-                if let (Some(lat), Some(lon)) = (s.lat, s.lon) {
-                    args.extend(["--lat".into(), lat.to_string(), "--lon".into(), lon.to_string()]);
-                } else if let (Some(rise), Some(set)) = (&s.sunrise, &s.sunset) {
-                    args.extend(["--sunrise".into(), rise.clone(), "--sunset".into(), set.clone()]);
+                if !self.config.sunlight.is_restartable() {
+                    return;
                 }
-                if s.preset == "simple" {
-                    args.extend(["--day-temp".into(), s.day_temp.to_string(), "--night-temp".into(), s.night_temp.to_string()]);
-                }
+                let mut args = vec!["sunlight".into()];
+                args.extend(self.config.sunlight.build_cli_args());
                 self.start_subprocess("sunlight", args);
             }
             _ => {}
@@ -205,6 +361,12 @@ impl App {
         );
         let color_temp = config.controls.color_temp;
         let mirror = config.screen.mirror;
+        let sunlight_inputs = SunlightInputs {
+            lat: config.sunlight.lat.map(|v| v.to_string()).unwrap_or_default(),
+            lon: config.sunlight.lon.map(|v| v.to_string()).unwrap_or_default(),
+            sunrise: config.sunlight.sunrise.clone().unwrap_or_default(),
+            sunset: config.sunlight.sunset.clone().unwrap_or_default(),
+        };
         let app = Self {
             page,
             device: None,
@@ -222,6 +384,8 @@ impl App {
             elapsed_secs: 0,
             mirror,
             subprocess_start: None,
+            sunlight_inputs,
+            sunlight_errors: SunlightInputErrors::default(),
         };
         let init_task = Task::perform(
             async {
@@ -389,12 +553,12 @@ impl App {
             }
             Message::SetScreenFps(v) => { self.config.screen.fps = v; }
             Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; }
-            Message::SetScreenSegments(v) => { self.config.screen.segments = v; }
+            Message::SetScreenSegments(v) => { self.config.screen.segments = v.min(MAX_SEGMENTS); }
             Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); self.restart_if_active("audio"); }
             Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); self.restart_if_active("audio"); }
             Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; }
             Message::SetAudioSensitivity(v) => { self.config.audio.sensitivity = v as f64 / 10.0; }
-            Message::SetAudioSegments(v) => { self.config.audio.segments = v; }
+            Message::SetAudioSegments(v) => { self.config.audio.segments = v.min(MAX_SEGMENTS); }
             Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); self.restart_if_active("audio"); }
             Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; }
             Message::SaveConfig => { self.config.save(); }
@@ -432,26 +596,71 @@ impl App {
             }
             Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); self.restart_if_active("sunlight"); }
             Message::SetSunlightBrightness(v) => { self.config.sunlight.brightness = v; }
-            Message::SetSunlightSegments(v) => { self.config.sunlight.segments = v; }
+            Message::SetSunlightSegments(v) => { self.config.sunlight.segments = v.min(MAX_SEGMENTS); }
             Message::SetSunlightTransition(v) => { self.config.sunlight.transition = v; }
             Message::StartSunlight => {
-                let s = &self.config.sunlight;
-                let mut args = vec![
-                    "sunlight".into(),
-                    "--preset".into(), s.preset.clone(),
-                    "--brightness".into(), s.brightness.to_string(),
-                    "--segments".into(), s.segments.to_string(),
-                    "--transition".into(), s.transition.to_string(),
-                ];
-                if let (Some(lat), Some(lon)) = (s.lat, s.lon) {
-                    args.extend(["--lat".into(), lat.to_string(), "--lon".into(), lon.to_string()]);
-                } else if let (Some(rise), Some(set)) = (&s.sunrise, &s.sunset) {
-                    args.extend(["--sunrise".into(), rise.clone(), "--sunset".into(), set.clone()]);
+                if !self.config.sunlight.is_restartable() {
+                    self.populate_sunlight_errors_from_inputs();
+                    return Task::none();
                 }
-                if s.preset == "simple" {
-                    args.extend(["--day-temp".into(), s.day_temp.to_string(), "--night-temp".into(), s.night_temp.to_string()]);
-                }
+                let mut args = vec!["sunlight".into()];
+                args.extend(self.config.sunlight.build_cli_args());
                 self.start_subprocess("sunlight", args);
+            }
+            Message::SetSunlightUseLocation(v) => {
+                self.config.sunlight.use_location = v;
+                self.config.save();
+                self.restart_if_active("sunlight");
+            }
+            Message::EditSunlightLat(s) => {
+                self.sunlight_inputs.lat = s;
+                let r = validate_latlon(&self.sunlight_inputs.lat, 90.0, "latitude");
+                if apply_tristate(r, &mut self.config.sunlight.lat, &mut self.sunlight_errors.lat) {
+                    self.config.save();
+                }
+            }
+            Message::EditSunlightLon(s) => {
+                self.sunlight_inputs.lon = s;
+                let r = validate_latlon(&self.sunlight_inputs.lon, 180.0, "longitude");
+                if apply_tristate(r, &mut self.config.sunlight.lon, &mut self.sunlight_errors.lon) {
+                    self.config.save();
+                }
+            }
+            Message::EditSunlightSunrise(s) => {
+                self.sunlight_inputs.sunrise = s;
+                let r = validate_time(&self.sunlight_inputs.sunrise);
+                if apply_tristate(r, &mut self.config.sunlight.sunrise, &mut self.sunlight_errors.sunrise) {
+                    self.config.save();
+                }
+            }
+            Message::EditSunlightSunset(s) => {
+                self.sunlight_inputs.sunset = s;
+                let r = validate_time(&self.sunlight_inputs.sunset);
+                if apply_tristate(r, &mut self.config.sunlight.sunset, &mut self.sunlight_errors.sunset) {
+                    self.config.save();
+                }
+            }
+            Message::SubmitSunlightCoords => {
+                if self.config.sunlight.is_restartable() {
+                    self.config.save();
+                    self.restart_if_active("sunlight");
+                } else {
+                    self.populate_sunlight_errors_from_inputs();
+                }
+            }
+            Message::SetSunlightDayTemp(v) => { self.config.sunlight.day_temp = v; }
+            Message::SetSunlightNightTemp(v) => { self.config.sunlight.night_temp = v; }
+            Message::ToggleSunlightNightBrightnessOverride(on) => {
+                self.config.sunlight.night_brightness = if on {
+                    Some(self.config.sunlight.night_brightness.unwrap_or(30))
+                } else {
+                    None
+                };
+                self.config.save();
+                self.restart_if_active("sunlight");
+            }
+            Message::SetSunlightNightBrightness(v) => {
+                self.config.sunlight.night_brightness = Some(v);
             }
             Message::ApplyScreenSettings => { self.config.save(); self.restart_if_active("screen"); }
             Message::ApplyAudioSettings => { self.config.save(); self.restart_if_active("audio"); }
