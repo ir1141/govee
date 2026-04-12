@@ -10,6 +10,7 @@ Control Govee LED strip lights over your local network using the LAN API. No clo
 - **[Ambient mode](#ambient-wallpaper-sync)** — syncs strip color to your wallpaper theme via [Caelestia](https://github.com/caelestia-dots/)
 - **[Screen mode](#screen-capture-ambilight)** — real-time ambilight from Wayland screen capture
 - **[Audio mode](#audio-reactive)** — audio-reactive visualization with energy, frequency, beat, and drop modes
+- **[Sunlight mode](#sunlight-daynight-cycle)** — crossfades between day and night themes based on solar position
 - **DreamView** — multi-segment color control with gradient interpolation
 - **Mirror mode** — doubles segments in reverse for U-shaped strip layouts (`--mirror`)
 - **[GUI](#gui)** — graphical interface built with [iced](https://iced.rs) for all of the above
@@ -141,6 +142,42 @@ govee audio --verbose
 
 **Visualization modes:** `energy`, `frequency`, `beat`, `drop`
 **Palettes:** `fire`, `ocean`, `forest`, `neon`, `ice`, `sunset`, `rainbow`
+
+### Sunlight (day/night cycle)
+
+Tracks the sun and crossfades the strip between a day behavior and a night behavior across sunrise and sunset windows. Each preset pairs two animated themes; `simple` instead crossfades between two color temperatures.
+
+```bash
+# Default: coastal preset (wave by day, fireplace by night)
+govee sunlight
+
+# Pick a preset
+govee sunlight --preset arctic
+govee sunlight --preset ember
+govee sunlight --preset simple --day-temp 6500 --night-temp 2700
+
+# Use solar calculation for your location
+govee sunlight --lat 47.6 --lon -122.3
+
+# Or override sunrise/sunset manually
+govee sunlight --sunrise 06:30 --sunset 20:15
+
+# Tune the transition window and brightness
+govee sunlight --transition 60 --brightness 80 --night-brightness 30
+```
+
+**Presets:** `coastal`, `arctic`, `ember`, `simple`
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--preset` | `coastal` | Day/night behavior pair |
+| `--lat` / `--lon` | — | Location for solar calculation |
+| `--sunrise` / `--sunset` | — | Manual `HH:MM` override |
+| `--transition` | `45` | Crossfade duration (minutes) |
+| `--brightness` | `80` | Day brightness (1–100) |
+| `--night-brightness` | — | Night brightness (omit to keep constant) |
+| `--segments` | `15` | DreamView segments |
+| `--day-temp` / `--night-temp` | `6500` / `3000` | Color temps (`simple` preset only) |
 
 ### Themes
 
@@ -318,6 +355,7 @@ b = 0
 - **Screen** — configure and launch ambilight mode (FPS, segments, brightness)
 - **Audio** — configure and launch audio-reactive mode (visualization mode, segments, brightness)
 - **Ambient** — configure and launch wallpaper sync (brightness, dim toggle)
+- **Sunlight** — configure and launch day/night cycle (preset, location, transition, brightness)
 
 The GUI spawns the `govee` CLI as a subprocess for continuous modes (screen, audio, ambient, animated themes) and sends direct UDP commands for one-shot actions. Device discovery runs automatically on launch with periodic refresh. A global mirror toggle is available in the status bar.
 

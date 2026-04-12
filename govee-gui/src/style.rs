@@ -24,6 +24,7 @@ pub const TEXT_MUTED: Color = Color::from_rgb(0.42, 0.42, 0.56);
 pub const SUCCESS: Color = Color::from_rgb(0.30, 0.88, 0.55);
 pub const DANGER: Color = Color::from_rgb(0.90, 0.25, 0.25);
 pub const DANGER_HOVER: Color = Color::from_rgb(0.80, 0.20, 0.20);
+pub const INPUT_ERROR: Color = Color::from_rgb(0.95, 0.35, 0.40);
 
 pub const SPACING: f32 = 10.0;
 pub const RADIUS: f32 = 12.0;
