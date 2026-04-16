@@ -90,6 +90,7 @@ fn resolve_or_exit(ip: Option<&str>) -> String {
 
 fn main() {
     let cli = Cli::parse();
+    ui::set_quiet(cli.quiet);
 
     let ip = cli.ip;
 
@@ -114,7 +115,9 @@ fn main() {
                             if d.ble_version.is_empty() { "?" } else { &d.ble_version }
                         ).dimmed()
                     );
-                    println!("{details}");
+                    if !ui::is_quiet() {
+                        println!("{details}");
+                    }
                 }
             }
         }

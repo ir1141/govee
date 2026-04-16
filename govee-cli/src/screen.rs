@@ -82,10 +82,7 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
         crate::ui::info("Mode", &format!("{} {}", "single color".white(), format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()));
         crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
     }
-    {
-        use colored::Colorize;
-        println!("  {}", "Press Ctrl+C to stop".dimmed());
-    }
+    crate::ui::ctrlc_hint();
 
     let mut smoothed: Vec<(f64, f64, f64)> = vec![(0.0, 0.0, 0.0); n_seg];
     let mut last_sent: Vec<(u8, u8, u8)> = vec![(0, 0, 0); n_seg];

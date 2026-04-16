@@ -45,7 +45,7 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
         use colored::Colorize;
         crate::ui::info("Mode", &format!("{} {}", format!("{:?}", args.mode).white(), format!("{} · {:?} · sens: {}", mode_str, args.palette, args.sensitivity).dimmed()));
         crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
-        println!("  {}", "Press Ctrl+C to stop".dimmed());
+        crate::ui::ctrlc_hint();
     }
 
     ctrlc_setup();

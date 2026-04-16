@@ -65,6 +65,9 @@ pub struct Cli {
     #[arg(long, global = true, help = "Mirror segments for U-shaped strip layout")]
     pub mirror: bool,
 
+    #[arg(long, short, global = true, help = "Suppress informational output")]
+    pub quiet: bool,
+
     #[arg(long, global = true, help = "Device IP (auto-discovers if omitted)")]
     pub ip: Option<String>,
 

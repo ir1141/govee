@@ -242,10 +242,7 @@ fn run_simple_loop(args: &SunlightArgs, ip: &str, sunrise: NaiveTime, sunset: Na
             args.transition
         ),
     );
-    {
-        use colored::Colorize;
-        println!("  {}", "Press Ctrl+C to stop".dimmed());
-    }
+    crate::ui::ctrlc_hint();
 
     send_brightness(ip, args.brightness).ok();
 
@@ -364,7 +361,7 @@ fn run_animated_loop(
         );
         crate::ui::info("Segments", &format!("{n_seg}"));
         crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
-        println!("  {}", "Press Ctrl+C to stop".dimmed());
+        crate::ui::ctrlc_hint();
     }
 
     let sender = UdpSender::new(ip).expect("Failed to create UDP sender");

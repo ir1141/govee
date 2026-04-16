@@ -2,14 +2,29 @@
 //! segment blocks, and theme list formatting.
 
 use colored::Colorize;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 const DIAMOND: &str = "◆";
 const ERROR_X: &str = "✖";
 const FILLED: char = '█';
 const EMPTY: char = '░';
 
+/// Global flag to suppress all informational UI output (set once at startup via `--quiet`).
+static QUIET: AtomicBool = AtomicBool::new(false);
+
+/// Enable or disable quiet mode (suppresses informational output, not errors).
+pub fn set_quiet(quiet: bool) {
+    QUIET.store(quiet, Ordering::Relaxed);
+}
+
+/// Returns `true` if quiet mode is active.
+pub fn is_quiet() -> bool {
+    QUIET.load(Ordering::Relaxed)
+}
+
 /// Print the application banner with version.
 pub fn banner() {
+    if is_quiet() { return; }
     println!(
         "{} {} {}",
         "░▒▓".purple(),
@@ -22,7 +37,20 @@ pub fn banner() {
 
 /// Print a labeled info line with a purple diamond prefix.
 pub fn info(label: &str, value: &str) {
+    if is_quiet() { return; }
     println!("{} {} {}", DIAMOND.purple(), label, value);
+}
+
+/// Print an indented hint line.
+pub fn hint(msg: &str) {
+    if is_quiet() { return; }
+    use colored::Colorize;
+    println!("  {}", msg.dimmed());
+}
+
+/// Print the standard "Press Ctrl+C to stop" hint.
+pub fn ctrlc_hint() {
+    hint("Press Ctrl+C to stop");
 }
 
 /// Print an error message to stderr.
@@ -73,6 +101,7 @@ pub fn segment_blocks(colors: &[(u8, u8, u8)]) -> String {
 
 /// Overwrite the current terminal line with segment colors and metadata.
 pub fn status_line(segments: &[(u8, u8, u8)], meta: &str) {
+    if is_quiet() { return; }
     let blocks = segment_blocks(segments);
     print!("\r{} {}", blocks, meta.dimmed());
     use std::io::Write;
@@ -81,16 +110,19 @@ pub fn status_line(segments: &[(u8, u8, u8)], meta: &str) {
 
 /// End the live status line with a newline.
 pub fn status_line_finish() {
+    if is_quiet() { return; }
     println!();
 }
 
 /// Print "Scanning for devices..." status.
 pub fn discovery_scanning() {
+    if is_quiet() { return; }
     eprintln!("{} {}", DIAMOND.purple(), "Scanning for devices...".dimmed());
 }
 
 /// Print a discovered device name and IP.
 pub fn discovery_found(name: &str, ip: &str) {
+    if is_quiet() { return; }
     eprintln!(
         "{} Found {} {} {}",
         DIAMOND.cyan(),
@@ -153,10 +185,12 @@ pub fn theme_list_help(themes: &[(&str, &str)]) -> String {
 
 /// Print DreamView deactivation message.
 pub fn deactivating() {
+    if is_quiet() { return; }
     println!("{}", "Deactivating DreamView mode...".dimmed());
 }
 
 /// Print "Stopped." message.
 pub fn stopped() {
+    if is_quiet() { return; }
     println!("{}", "Stopped.".dimmed());
 }

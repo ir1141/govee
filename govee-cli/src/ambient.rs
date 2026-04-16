@@ -61,13 +61,10 @@ pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
         last_rgb = Some((r, g, b));
     }
 
-    {
-        use colored::Colorize;
-        crate::ui::info("Watching", &format!("{}", path.display()));
-        crate::ui::info("Color key", &color_key);
-        crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
-        println!("  {}", "Press Ctrl+C to stop".dimmed());
-    }
+    crate::ui::info("Watching", &format!("{}", path.display()));
+    crate::ui::info("Color key", &color_key);
+    crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
+    crate::ui::ctrlc_hint();
 
     let mut inotify = Inotify::init().expect("Failed to initialize inotify");
 
@@ -126,7 +123,7 @@ pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {
             }
         }
     }
-    println!();
+    crate::ui::status_line_finish();
     crate::ui::stopped();
 }
 

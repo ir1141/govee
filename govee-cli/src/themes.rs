@@ -348,7 +348,7 @@ pub fn run_theme(
                 crate::ui::info("Theme", &format!("{} {}", name.white().bold(), format!("[{}]", theme.category).dimmed()));
                 crate::ui::info("Brightness", &crate::ui::brightness_bar(brightness));
                 crate::ui::info("Segments", &format!("{segments}"));
-                println!("  {}", "Press Ctrl+C to stop".dimmed());
+                crate::ui::ctrlc_hint();
             }
 
             ctrlc_setup();
