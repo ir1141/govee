@@ -75,6 +75,7 @@ govee on --ip 192.168.1.42
 | Flag | Description |
 |------|-------------|
 | `--mirror` | Double segments by appending a reversed copy (for U-shaped strip layouts) |
+| `--quiet` / `-q` | Suppress informational output (errors still print) |
 | `--debug` | Show raw UDP messages sent to the device |
 
 ### Screen capture (ambilight)
