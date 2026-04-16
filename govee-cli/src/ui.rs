@@ -18,7 +18,7 @@ pub fn set_quiet(quiet: bool) {
 }
 
 /// Returns `true` if quiet mode is active.
-pub fn is_quiet() -> bool {
+fn is_quiet() -> bool {
     QUIET.load(Ordering::Relaxed)
 }
 
@@ -41,16 +41,16 @@ pub fn info(label: &str, value: &str) {
     println!("{} {} {}", DIAMOND.purple(), label, value);
 }
 
-/// Print an indented hint line.
-pub fn hint(msg: &str) {
-    if is_quiet() { return; }
-    use colored::Colorize;
-    println!("  {}", msg.dimmed());
-}
-
 /// Print the standard "Press Ctrl+C to stop" hint.
 pub fn ctrlc_hint() {
-    hint("Press Ctrl+C to stop");
+    if is_quiet() { return; }
+    println!("  {}", "Press Ctrl+C to stop".dimmed());
+}
+
+/// Print a pre-formatted detail line (suppressed in quiet mode).
+pub fn detail(msg: &str) {
+    if is_quiet() { return; }
+    println!("{msg}");
 }
 
 /// Print an error message to stderr.

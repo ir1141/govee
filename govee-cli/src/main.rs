@@ -115,9 +115,7 @@ fn main() {
                             if d.ble_version.is_empty() { "?" } else { &d.ble_version }
                         ).dimmed()
                     );
-                    if !ui::is_quiet() {
-                        println!("{details}");
-                    }
+                    ui::detail(&details);
                 }
             }
         }
