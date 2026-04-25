@@ -473,12 +473,27 @@ pub fn map_colors(
     }
 }
 
-/// DJ-style laser sweep: two narrow saturated beams scan across a black strip,
-/// swap color on beats (rate-limited), and white-strobe on hard bass-flux spikes.
+/// DJ-style laser sweep: two narrow saturated beams scan in counter-phase
+/// across a black strip, with their motion locked to the music's tempo and
+/// their visibility tied to a smoothed energy floor — so quiet sections
+/// stay calm and loud sections drive an intentional show.
 ///
-/// Reuses `last_swap_t` (was `beat_hue`) as the timestamp of the last color
-/// change so swaps can be gated to a minimum interval, and `strobe_decay` as
-/// the bass-flash envelope.
+/// Behaviors:
+/// - **Tempo lock.** Beat-to-beat intervals feed an EMA estimate of the
+///   period; one full triangle sweep takes `BEATS_PER_SWEEP` beats. With no
+///   beats yet, falls back to a fixed period.
+/// - **Bar-aligned color swaps.** Color advances every `SWAP_BEATS` beats
+///   (one swap per bar in 4/4 — or one per two bars), gated by a min
+///   wall-clock cooldown so very fast tempos don't churn.
+/// - **Energy-aware damping.** A long EMA of `audio.energy` scales both
+///   sweep speed and beam visibility — silence dims and slows, never freezes.
+/// - **Disciplined strobe.** Bass-flux spikes only flash when the average
+///   energy is high (real drops, not isolated kicks) and a cooldown has
+///   elapsed; the flash floods with the active beam color (never white).
+///
+/// `last_swap_t` (the `beat_hue` slot) carries the wall-clock time of the
+/// last swap; `strobe_decay` is the flash envelope. Tempo / phase / EMA
+/// state lives in a thread-local so the call signature stays stable.
 fn map_laser(
     audio: &AudioState,
     n_seg: usize,
@@ -486,69 +501,166 @@ fn map_laser(
     last_swap_t: &mut f64,
     strobe_decay: &mut f64,
 ) -> Vec<(u8, u8, u8)> {
+    use std::cell::RefCell;
+
+    /// Per-mode persistent state: tempo, sweep phase, energy EMA, swap counter.
+    /// Lives in thread-local storage so `map_colors`'s public signature is unchanged.
+    /// Single-threaded render loop; CLI process exits between runs, so this resets naturally.
+    #[derive(Default)]
+    struct LaserState {
+        last_t: f64,
+        last_beat_t: f64,
+        bpm_period: f64,    // EMA seconds-per-beat; 0.0 until first valid interval
+        beat_count: u32,
+        avg_energy: f64,    // EMA of audio.energy
+        sweep_phase: f64,   // 0.0..2.0 — 0..1 forward, 1..2 reverse (triangle wave)
+        last_strobe_t: f64,
+        swap_counter: u32,  // increments each color swap; selects beam color
+    }
+    thread_local! {
+        static LASER: RefCell<LaserState> = RefCell::new(LaserState::default());
+    }
+
     // Beam color palette: classic green, hot magenta, ice cyan.
     const BEAMS: [(u8, u8, u8); 3] = [(0, 255, 30), (255, 0, 200), (0, 220, 255)];
-    /// Minimum seconds between color swaps — keeps the look from flickering on every kick.
-    const SWAP_COOLDOWN: f64 = 1.2;
-    /// Stricter than FLUX_TRIGGER (0.3) so only real drops strobe, not every bass note.
+    /// Beats per full triangle sweep cycle. 4 = one cycle per bar in 4/4 time.
+    const BEATS_PER_SWEEP: f64 = 4.0;
+    /// Sweep period (s) when no tempo is yet known — picks up at first beat.
+    const FALLBACK_SWEEP_PERIOD: f64 = 2.0;
+    /// Beats between color swaps. 8 = two bars in 4/4 — feels intentional, not twitchy.
+    const SWAP_BEATS: u32 = 8;
+    /// Wall-clock floor between swaps so very fast tempos don't churn the color.
+    const SWAP_MIN_INTERVAL: f64 = 1.5;
+    /// Bass-flux level needed to consider strobing.
     const LASER_STROBE_TRIGGER: f64 = 0.55;
+    /// Avg-energy floor required to actually fire — keeps quiet sections clean.
+    const LASER_STROBE_GATE: f64 = 0.25;
+    /// Min seconds between strobes so a noisy drop doesn't pulse continuously.
+    const LASER_STROBE_COOLDOWN: f64 = 0.4;
 
-    if audio.beat && (t - *last_swap_t) >= SWAP_COOLDOWN {
-        *last_swap_t = t;
-    }
-    if audio.bass_flux > LASER_STROBE_TRIGGER {
-        *strobe_decay = 1.0;
-    } else {
-        *strobe_decay *= 0.55;
-    }
+    LASER.with(|state| {
+        let mut s = state.borrow_mut();
 
-    // Color index advances each swap; golden-ratio multiplier ensures every
-    // gated swap actually picks a different palette entry.
-    let beam_color_idx = (*last_swap_t * 1.618).floor() as i64;
-    let beam_color_idx = beam_color_idx.rem_euclid(BEAMS.len() as i64) as usize;
+        // Frame dt; clamped to absorb first-frame and any scheduling jitter so the
+        // phase accumulator stays stable.
+        let dt = if s.last_t == 0.0 {
+            1.0 / 60.0
+        } else {
+            (t - s.last_t).clamp(0.0, 0.1)
+        };
+        s.last_t = t;
 
-    // Mostly constant sweep speed; mild energy modulation so silence isn't static.
-    let speed = 5.0 + audio.energy * 2.0;
-    let span = n_seg as f64;
-    // Triangle-wave bounce: 0 → span → 0 over period 2*span/speed
-    let phase = (t * speed) % (2.0 * span);
-    let pos_a = if phase < span { phase } else { 2.0 * span - phase };
-    // Second beam runs counter-phase for an X-crossing pattern
-    let phase_b = (phase + span) % (2.0 * span);
-    let pos_b = if phase_b < span { phase_b } else { 2.0 * span - phase_b };
+        // EMA of energy with ~1.5 s time constant — long enough to ride out
+        // single-beat dips, short enough to react to section changes.
+        let energy_alpha = 1.0 - (-dt / 1.5).exp();
+        s.avg_energy += (audio.energy - s.avg_energy) * energy_alpha;
 
-    let beam_color = BEAMS[beam_color_idx];
-    // Counter-beam picks the next color so the two beams are always distinct
-    let beam_color_b = BEAMS[(beam_color_idx + 1) % BEAMS.len()];
+        // Beat tracking → tempo estimate + bar-aligned color swap.
+        if audio.beat {
+            if s.last_beat_t > 0.0 {
+                let interval = t - s.last_beat_t;
+                // Plausible BPM 40–200 → 0.30–1.50 s/beat. Outside this we
+                // probably missed/double-counted a beat; ignore the sample.
+                if (0.30..=1.50).contains(&interval) {
+                    if s.bpm_period == 0.0 {
+                        s.bpm_period = interval;
+                    } else {
+                        s.bpm_period += (interval - s.bpm_period) * 0.25;
+                    }
+                }
+            }
+            s.last_beat_t = t;
+            s.beat_count = s.beat_count.wrapping_add(1);
 
-    let strobe = (*strobe_decay).powi(2);
+            if s.beat_count.is_multiple_of(SWAP_BEATS)
+                && (t - *last_swap_t) >= SWAP_MIN_INTERVAL
+            {
+                *last_swap_t = t;
+                s.swap_counter = s.swap_counter.wrapping_add(1);
+            }
+        }
 
-    (0..n_seg)
-        .map(|i| {
-            let x = i as f64 + 0.5;
-            // Beam intensity profile: 1.0 at center, 0.4 at ±1, 0.08 at ±2 — sharp falloff
-            let intensity_at = |pos: f64| -> f64 {
-                let d = (x - pos).abs();
-                if d < 0.5 { 1.0 }
-                else if d < 1.5 { 0.4 }
-                else if d < 2.5 { 0.08 }
-                else { 0.0 }
-            };
-            let ia = intensity_at(pos_a);
-            let ib = intensity_at(pos_b);
+        // Sweep period in seconds: tempo-locked when we have a BPM, fixed otherwise.
+        let sweep_period = if s.bpm_period > 0.0 {
+            s.bpm_period * BEATS_PER_SWEEP
+        } else {
+            FALLBACK_SWEEP_PERIOD
+        };
 
-            // Additive mix of the two beams, clamped per channel
-            let r = (beam_color.0 as f64 * ia + beam_color_b.0 as f64 * ib).min(255.0);
-            let g = (beam_color.1 as f64 * ia + beam_color_b.1 as f64 * ib).min(255.0);
-            let b = (beam_color.2 as f64 * ia + beam_color_b.2 as f64 * ib).min(255.0);
+        // Quiet damping. 0.40 floor keeps the beams visibly moving even in
+        // silence; high avg_energy lets them run at full speed.
+        let energy_factor = (0.40 + s.avg_energy * 1.20).clamp(0.40, 1.00);
 
-            // Bass flash: flood the strip with the active beam color (never white)
-            let r = (r + (beam_color.0 as f64 - r) * strobe).clamp(0.0, 255.0) as u8;
-            let g = (g + (beam_color.1 as f64 - g) * strobe).clamp(0.0, 255.0) as u8;
-            let b = (b + (beam_color.2 as f64 - b) * strobe).clamp(0.0, 255.0) as u8;
-            (r, g, b)
-        })
-        .collect()
+        // Accumulate triangle-wave phase from dt rather than (t * speed). This
+        // keeps the motion continuous even when sweep_period changes (tempo
+        // re-estimate, energy ramp) — no visual snap when speed adjusts.
+        s.sweep_phase += 2.0 * dt * energy_factor / sweep_period;
+        if s.sweep_phase >= 2.0 {
+            s.sweep_phase -= 2.0;
+        }
+
+        let span = n_seg as f64;
+        let pos_a = if s.sweep_phase < 1.0 {
+            s.sweep_phase * span
+        } else {
+            (2.0 - s.sweep_phase) * span
+        };
+        // Second beam runs counter-phase: beams cross at the strip center.
+        let phase_b = (s.sweep_phase + 1.0) % 2.0;
+        let pos_b = if phase_b < 1.0 {
+            phase_b * span
+        } else {
+            (2.0 - phase_b) * span
+        };
+
+        // Color index from the swap counter — deterministic and always advances.
+        let beam_color_idx = (s.swap_counter as usize) % BEAMS.len();
+        let beam_color = BEAMS[beam_color_idx];
+        // Counter-beam picks the next palette entry so the two are always distinct.
+        let beam_color_b = BEAMS[(beam_color_idx + 1) % BEAMS.len()];
+
+        // Strobe: requires real flux AND active section AND cooldown elapsed.
+        if audio.bass_flux > LASER_STROBE_TRIGGER
+            && s.avg_energy > LASER_STROBE_GATE
+            && (t - s.last_strobe_t) > LASER_STROBE_COOLDOWN
+        {
+            *strobe_decay = 1.0;
+            s.last_strobe_t = t;
+        } else {
+            *strobe_decay *= 0.55;
+        }
+        let strobe = (*strobe_decay).powi(2);
+
+        // Beam visibility ducks during quiet sections so silence isn't chaotic.
+        let visibility = (0.35 + s.avg_energy * 1.0).clamp(0.35, 1.0);
+
+        (0..n_seg)
+            .map(|i| {
+                let x = i as f64 + 0.5;
+                // Beam intensity profile: 1.0 at center, 0.4 at ±1, 0.08 at ±2 — sharp falloff.
+                let intensity_at = |pos: f64| -> f64 {
+                    let d = (x - pos).abs();
+                    if d < 0.5 { 1.0 }
+                    else if d < 1.5 { 0.4 }
+                    else if d < 2.5 { 0.08 }
+                    else { 0.0 }
+                };
+                let ia = intensity_at(pos_a) * visibility;
+                let ib = intensity_at(pos_b) * visibility;
+
+                // Additive mix of the two beams, clamped per channel.
+                let r = (beam_color.0 as f64 * ia + beam_color_b.0 as f64 * ib).min(255.0);
+                let g = (beam_color.1 as f64 * ia + beam_color_b.1 as f64 * ib).min(255.0);
+                let b = (beam_color.2 as f64 * ia + beam_color_b.2 as f64 * ib).min(255.0);
+
+                // Bass flash: flood the strip with the active beam color (never white).
+                let r = (r + (beam_color.0 as f64 - r) * strobe).clamp(0.0, 255.0) as u8;
+                let g = (g + (beam_color.1 as f64 - g) * strobe).clamp(0.0, 255.0) as u8;
+                let b = (b + (beam_color.2 as f64 - b) * strobe).clamp(0.0, 255.0) as u8;
+                (r, g, b)
+            })
+            .collect()
+    })
 }
 
 fn map_energy(audio: &AudioState, palette: Palette, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
