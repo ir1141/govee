@@ -25,6 +25,7 @@ pub enum VisMode {
     Frequency,
     Beat,
     Drop,
+    Laser,
 }
 
 /// Color palette for the visualization.
@@ -76,8 +77,8 @@ pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
             (0, 0, 0),
             (128, 0, 0),
             (255, 100, 0),
-            (255, 220, 50),
-            (255, 255, 255),
+            (255, 180, 0),
+            (255, 240, 180),
         ],
         Palette::Ocean => &[
             (0, 0, 0),
@@ -468,7 +469,86 @@ pub fn map_colors(
         VisMode::Frequency => map_frequency(audio, palette, n_seg),
         VisMode::Beat => map_beat(audio, palette, n_seg, beat_hue, beat_decay),
         VisMode::Drop => map_drop(audio, n_seg, beat_hue, beat_decay),
+        VisMode::Laser => map_laser(audio, n_seg, t, beat_hue, beat_decay),
     }
+}
+
+/// DJ-style laser sweep: two narrow saturated beams scan across a black strip,
+/// swap color on beats (rate-limited), and white-strobe on hard bass-flux spikes.
+///
+/// Reuses `last_swap_t` (was `beat_hue`) as the timestamp of the last color
+/// change so swaps can be gated to a minimum interval, and `strobe_decay` as
+/// the bass-flash envelope.
+fn map_laser(
+    audio: &AudioState,
+    n_seg: usize,
+    t: f64,
+    last_swap_t: &mut f64,
+    strobe_decay: &mut f64,
+) -> Vec<(u8, u8, u8)> {
+    // Beam color palette: classic green, hot magenta, ice cyan.
+    const BEAMS: [(u8, u8, u8); 3] = [(0, 255, 30), (255, 0, 200), (0, 220, 255)];
+    /// Minimum seconds between color swaps — keeps the look from flickering on every kick.
+    const SWAP_COOLDOWN: f64 = 1.2;
+    /// Stricter than FLUX_TRIGGER (0.3) so only real drops strobe, not every bass note.
+    const LASER_STROBE_TRIGGER: f64 = 0.55;
+
+    if audio.beat && (t - *last_swap_t) >= SWAP_COOLDOWN {
+        *last_swap_t = t;
+    }
+    if audio.bass_flux > LASER_STROBE_TRIGGER {
+        *strobe_decay = 1.0;
+    } else {
+        *strobe_decay *= 0.55;
+    }
+
+    // Color index advances each swap; golden-ratio multiplier ensures every
+    // gated swap actually picks a different palette entry.
+    let beam_color_idx = (*last_swap_t * 1.618).floor() as i64;
+    let beam_color_idx = beam_color_idx.rem_euclid(BEAMS.len() as i64) as usize;
+
+    // Mostly constant sweep speed; mild energy modulation so silence isn't static.
+    let speed = 5.0 + audio.energy * 2.0;
+    let span = n_seg as f64;
+    // Triangle-wave bounce: 0 → span → 0 over period 2*span/speed
+    let phase = (t * speed) % (2.0 * span);
+    let pos_a = if phase < span { phase } else { 2.0 * span - phase };
+    // Second beam runs counter-phase for an X-crossing pattern
+    let phase_b = (phase + span) % (2.0 * span);
+    let pos_b = if phase_b < span { phase_b } else { 2.0 * span - phase_b };
+
+    let beam_color = BEAMS[beam_color_idx];
+    // Counter-beam picks the next color so the two beams are always distinct
+    let beam_color_b = BEAMS[(beam_color_idx + 1) % BEAMS.len()];
+
+    let strobe = (*strobe_decay).powi(2);
+
+    (0..n_seg)
+        .map(|i| {
+            let x = i as f64 + 0.5;
+            // Beam intensity profile: 1.0 at center, 0.4 at ±1, 0.08 at ±2 — sharp falloff
+            let intensity_at = |pos: f64| -> f64 {
+                let d = (x - pos).abs();
+                if d < 0.5 { 1.0 }
+                else if d < 1.5 { 0.4 }
+                else if d < 2.5 { 0.08 }
+                else { 0.0 }
+            };
+            let ia = intensity_at(pos_a);
+            let ib = intensity_at(pos_b);
+
+            // Additive mix of the two beams, clamped per channel
+            let r = (beam_color.0 as f64 * ia + beam_color_b.0 as f64 * ib).min(255.0);
+            let g = (beam_color.1 as f64 * ia + beam_color_b.1 as f64 * ib).min(255.0);
+            let b = (beam_color.2 as f64 * ia + beam_color_b.2 as f64 * ib).min(255.0);
+
+            // Bass flash: flood the strip with the active beam color (never white)
+            let r = (r + (beam_color.0 as f64 - r) * strobe).clamp(0.0, 255.0) as u8;
+            let g = (g + (beam_color.1 as f64 - g) * strobe).clamp(0.0, 255.0) as u8;
+            let b = (b + (beam_color.2 as f64 - b) * strobe).clamp(0.0, 255.0) as u8;
+            (r, g, b)
+        })
+        .collect()
 }
 
 fn map_energy(audio: &AudioState, palette: Palette, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {

@@ -5,7 +5,7 @@ use clap::{Args, Parser, Subcommand};
 /// CLI-side visualization mode (maps to [`govee_lan::audio::VisMode`]).
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CliVisMode {
-    Energy, Frequency, Beat, Drop,
+    Energy, Frequency, Beat, Drop, Laser,
 }
 
 /// CLI-side palette selection (maps to [`govee_lan::audio::Palette`]).
@@ -21,6 +21,7 @@ impl From<CliVisMode> for govee_lan::audio::VisMode {
             CliVisMode::Frequency => Self::Frequency,
             CliVisMode::Beat => Self::Beat,
             CliVisMode::Drop => Self::Drop,
+            CliVisMode::Laser => Self::Laser,
         }
     }
 }

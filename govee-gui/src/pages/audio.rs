@@ -3,7 +3,7 @@ use iced::{Alignment, Element, Length};
 use crate::app::{App, Message};
 use crate::style;
 
-const AUDIO_MODES: &[&str] = &["energy", "frequency", "beat", "drop"];
+const AUDIO_MODES: &[&str] = &["energy", "frequency", "beat", "drop", "laser"];
 const AUDIO_PALETTES: &[&str] = &["fire", "ocean", "forest", "neon", "ice", "sunset", "rainbow"];
 
 pub fn view(app: &App) -> Element<'_, Message> {
