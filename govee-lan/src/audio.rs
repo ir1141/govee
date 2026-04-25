@@ -473,10 +473,10 @@ pub fn map_colors(
     }
 }
 
-/// DJ-style laser sweep: two narrow saturated beams scan in counter-phase
-/// across a black strip, with their motion locked to the music's tempo and
-/// their visibility tied to a smoothed energy floor — so quiet sections
-/// stay calm and loud sections drive an intentional show.
+/// DJ-style laser sweep: two narrow saturated beams scan a black strip,
+/// with their motion locked to the music's tempo and their visibility
+/// tied to a smoothed energy floor — so quiet sections stay calm and
+/// loud sections drive an intentional show.
 ///
 /// Behaviors:
 /// - **Tempo lock.** Beat-to-beat intervals feed an EMA estimate of the
@@ -485,6 +485,10 @@ pub fn map_colors(
 /// - **Bar-aligned color swaps.** Color advances every `SWAP_BEATS` beats
 ///   (one swap per bar in 4/4 — or one per two bars), gated by a min
 ///   wall-clock cooldown so very fast tempos don't churn.
+/// - **Pattern rotation.** Beam motion cycles through `PATTERN_COUNT`
+///   patterns (X-cross, mirror-expand, anchored-inner, single-sweep) every
+///   `PATTERN_BEATS` beats. Drops snap to the next pattern immediately so
+///   the show *reacts* to song structure instead of just looping.
 /// - **Energy-aware damping.** A long EMA of `audio.energy` scales both
 ///   sweep speed and beam visibility — silence dims and slows, never freezes.
 /// - **Disciplined strobe.** Bass-flux spikes only flash when the average
@@ -492,8 +496,8 @@ pub fn map_colors(
 ///   elapsed; the flash floods with the active beam color (never white).
 ///
 /// `last_swap_t` (the `beat_hue` slot) carries the wall-clock time of the
-/// last swap; `strobe_decay` is the flash envelope. Tempo / phase / EMA
-/// state lives in a thread-local so the call signature stays stable.
+/// last swap; `strobe_decay` is the flash envelope. Tempo / phase / EMA /
+/// pattern state lives in a thread-local so the call signature stays stable.
 fn map_laser(
     audio: &AudioState,
     n_seg: usize,
@@ -503,7 +507,7 @@ fn map_laser(
 ) -> Vec<(u8, u8, u8)> {
     use std::cell::RefCell;
 
-    /// Per-mode persistent state: tempo, sweep phase, energy EMA, swap counter.
+    /// Per-mode persistent state: tempo, sweep phase, energy EMA, swap/pattern counters.
     /// Lives in thread-local storage so `map_colors`'s public signature is unchanged.
     /// Single-threaded render loop; CLI process exits between runs, so this resets naturally.
     #[derive(Default)]
@@ -516,6 +520,7 @@ fn map_laser(
         sweep_phase: f64,   // 0.0..2.0 — 0..1 forward, 1..2 reverse (triangle wave)
         last_strobe_t: f64,
         swap_counter: u32,  // increments each color swap; selects beam color
+        pattern_idx: u32,   // increments on bar-boundary or strobe; selects motion pattern
     }
     thread_local! {
         static LASER: RefCell<LaserState> = RefCell::new(LaserState::default());
@@ -531,6 +536,10 @@ fn map_laser(
     const SWAP_BEATS: u32 = 8;
     /// Wall-clock floor between swaps so very fast tempos don't churn the color.
     const SWAP_MIN_INTERVAL: f64 = 1.5;
+    /// Beats between motion-pattern rotations. 16 = four bars in 4/4.
+    const PATTERN_BEATS: u32 = 16;
+    /// Number of motion patterns; pattern_idx % PATTERN_COUNT selects.
+    const PATTERN_COUNT: u32 = 4;
     /// Bass-flux level needed to consider strobing.
     const LASER_STROBE_TRIGGER: f64 = 0.55;
     /// Avg-energy floor required to actually fire — keeps quiet sections clean.
@@ -578,6 +587,9 @@ fn map_laser(
                 *last_swap_t = t;
                 s.swap_counter = s.swap_counter.wrapping_add(1);
             }
+            if s.beat_count.is_multiple_of(PATTERN_BEATS) {
+                s.pattern_idx = s.pattern_idx.wrapping_add(1);
+            }
         }
 
         // Sweep period in seconds: tempo-locked when we have a BPM, fixed otherwise.
@@ -600,17 +612,39 @@ fn map_laser(
         }
 
         let span = n_seg as f64;
-        let pos_a = if s.sweep_phase < 1.0 {
-            s.sweep_phase * span
-        } else {
-            (2.0 - s.sweep_phase) * span
-        };
-        // Second beam runs counter-phase: beams cross at the strip center.
+        // Triangle wave: phase 0..2 → 0..1..0
+        let tri = |p: f64| -> f64 { if p < 1.0 { p } else { 2.0 - p } };
         let phase_b = (s.sweep_phase + 1.0) % 2.0;
-        let pos_b = if phase_b < 1.0 {
-            phase_b * span
-        } else {
-            (2.0 - phase_b) * span
+
+        // Pattern rotation drives the spatial layout of the two beams.
+        // beam_b_active=false hides beam B (single-sweep look).
+        let (pos_a, pos_b, beam_b_active) = match s.pattern_idx % PATTERN_COUNT {
+            0 => {
+                // X-cross: beams sweep counter-phase across the full strip.
+                (tri(s.sweep_phase) * span, tri(phase_b) * span, true)
+            }
+            1 => {
+                // Mirror-expand: each beam covers half the strip; they meet
+                // at the center on every turnaround, then expand back to the
+                // edges. Strong "in-and-out" pulse feel.
+                let half = span / 2.0;
+                let pa = tri(s.sweep_phase) * half;
+                let pb = span - tri(s.sweep_phase) * half;
+                (pa, pb, true)
+            }
+            2 => {
+                // Anchored-inner: beam A sweeps the full strip; beam B
+                // sweeps only the inner 50%, counter-phase. Looks like a
+                // wide laser scanning past a tighter inner one.
+                let pa = tri(s.sweep_phase) * span;
+                let pb = span * 0.25 + tri(phase_b) * (span * 0.5);
+                (pa, pb, true)
+            }
+            _ => {
+                // Single-sweep: just beam A — gives the eye a rest before
+                // the next two-beam pattern lands.
+                (tri(s.sweep_phase) * span, 0.0, false)
+            }
         };
 
         // Color index from the swap counter — deterministic and always advances.
@@ -620,12 +654,14 @@ fn map_laser(
         let beam_color_b = BEAMS[(beam_color_idx + 1) % BEAMS.len()];
 
         // Strobe: requires real flux AND active section AND cooldown elapsed.
+        // A strobe also snaps the pattern to the next one — so drops *react*.
         if audio.bass_flux > LASER_STROBE_TRIGGER
             && s.avg_energy > LASER_STROBE_GATE
             && (t - s.last_strobe_t) > LASER_STROBE_COOLDOWN
         {
             *strobe_decay = 1.0;
             s.last_strobe_t = t;
+            s.pattern_idx = s.pattern_idx.wrapping_add(1);
         } else {
             *strobe_decay *= 0.55;
         }
@@ -646,7 +682,7 @@ fn map_laser(
                     else { 0.0 }
                 };
                 let ia = intensity_at(pos_a) * visibility;
-                let ib = intensity_at(pos_b) * visibility;
+                let ib = if beam_b_active { intensity_at(pos_b) * visibility } else { 0.0 };
 
                 // Additive mix of the two beams, clamped per channel.
                 let r = (beam_color.0 as f64 * ia + beam_color_b.0 as f64 * ib).min(255.0);
