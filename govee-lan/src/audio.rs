@@ -76,9 +76,9 @@ pub fn palette_color(palette: Palette, intensity: f64) -> (u8, u8, u8) {
         Palette::Fire => &[
             (0, 0, 0),
             (128, 0, 0),
-            (255, 100, 0),
-            (255, 180, 0),
-            (255, 240, 180),
+            (255, 80, 0),
+            (255, 130, 0),
+            (255, 170, 0),
         ],
         Palette::Ocean => &[
             (0, 0, 0),
