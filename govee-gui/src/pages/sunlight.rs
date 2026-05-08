@@ -1,10 +1,10 @@
 //! Sunlight mode settings page: preset, location or manual times, brightness,
 //! segments, transition, and an optional simple-preset card.
 
-use iced::widget::{button, column, container, horizontal_space, row, text, text_input, toggler};
-use iced::{Alignment, Element, Length};
 use crate::app::{App, Message};
 use crate::style;
+use iced::widget::{button, column, container, horizontal_space, row, text, text_input, toggler};
+use iced::{Alignment, Element, Length};
 
 const PRESETS: &[&str] = &["coastal", "arctic", "ember", "simple"];
 
@@ -12,7 +12,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let is_active = app.active_mode.as_deref() == Some("sunlight");
 
     let start_stop_btn = crate::widgets::slider_card::start_stop_button(
-        is_active, "Sunlight", Message::StartSunlight,
+        is_active,
+        "Sunlight",
+        Message::StartSunlight,
     );
 
     let header = row![
@@ -87,7 +89,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 "HH:MM",
                 Message::EditSunlightSunrise,
                 app.sunlight_errors.sunrise.as_deref(),
-                app.config.sunlight.sunrise.as_ref().map(|v| format!("saved: {v}")),
+                app.config
+                    .sunlight
+                    .sunrise
+                    .as_ref()
+                    .map(|v| format!("saved: {v}")),
             ),
             labeled_input(
                 "Sunset",
@@ -95,7 +101,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 "HH:MM",
                 Message::EditSunlightSunset,
                 app.sunlight_errors.sunset.as_deref(),
-                app.config.sunlight.sunset.as_ref().map(|v| format!("saved: {v}")),
+                app.config
+                    .sunlight
+                    .sunset
+                    .as_ref()
+                    .map(|v| format!("saved: {v}")),
             ),
         ]
         .spacing(10)
@@ -114,16 +124,27 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .style(style::card_style);
 
     let brightness_card = crate::widgets::slider_card::slider_card(
-        "Brightness", app.config.sunlight.brightness, "%", 1..=100, Message::SetSunlightBrightness, Message::ApplySunlightSettings,
+        "Brightness",
+        app.config.sunlight.brightness,
+        "%",
+        1..=100,
+        Message::SetSunlightBrightness,
+        Message::ApplySunlightSettings,
     );
 
     let segments_card = crate::widgets::slider_card::segments_card(
-        app.config.sunlight.segments, Message::SetSunlightSegments, Message::ApplySunlightSettings,
+        app.config.sunlight.segments,
+        Message::SetSunlightSegments,
+        Message::ApplySunlightSettings,
     );
 
     let transition_card = crate::widgets::slider_card::slider_card(
-        "Transition", app.config.sunlight.transition as u8, "min", 10..=120,
-        |v| Message::SetSunlightTransition(v as u32), Message::ApplySunlightSettings,
+        "Transition",
+        app.config.sunlight.transition.min(120) as u8,
+        "min",
+        10..=120,
+        |v| Message::SetSunlightTransition(v as u32),
+        Message::ApplySunlightSettings,
     );
 
     let mut col = column![
@@ -157,11 +178,7 @@ fn labeled_input<'a>(
         .padding(8)
         .width(Length::Fill);
 
-    let mut col = column![
-        text(label).size(13).color(style::TEXT_SECONDARY),
-        input,
-    ]
-    .spacing(4);
+    let mut col = column![text(label).size(13).color(style::TEXT_SECONDARY), input,].spacing(4);
 
     if let Some(err) = error {
         col = col.push(text(err).size(12).color(style::INPUT_ERROR));
@@ -182,7 +199,9 @@ fn simple_preset_card(app: &App) -> Element<'_, Message> {
         row![
             text("Day temp").size(14).color(style::TEXT_PRIMARY),
             horizontal_space(),
-            text(format!("{day_temp}K")).size(14).color(style::TEXT_SECONDARY),
+            text(format!("{day_temp}K"))
+                .size(14)
+                .color(style::TEXT_SECONDARY),
         ]
         .align_y(Alignment::Center),
         iced::widget::slider(2700u16..=6500u16, day_temp, Message::SetSunlightDayTemp)
@@ -196,7 +215,9 @@ fn simple_preset_card(app: &App) -> Element<'_, Message> {
         row![
             text("Night temp").size(14).color(style::TEXT_PRIMARY),
             horizontal_space(),
-            text(format!("{night_temp}K")).size(14).color(style::TEXT_SECONDARY),
+            text(format!("{night_temp}K"))
+                .size(14)
+                .color(style::TEXT_SECONDARY),
         ]
         .align_y(Alignment::Center),
         iced::widget::slider(1800u16..=5000u16, night_temp, Message::SetSunlightNightTemp)
@@ -207,7 +228,9 @@ fn simple_preset_card(app: &App) -> Element<'_, Message> {
     .spacing(6);
 
     let override_row = row![
-        text("Night brightness override").size(14).color(style::TEXT_PRIMARY),
+        text("Night brightness override")
+            .size(14)
+            .color(style::TEXT_PRIMARY),
         horizontal_space(),
         toggler(nb_on).on_toggle(Message::ToggleSunlightNightBrightnessOverride),
     ]
@@ -226,7 +249,9 @@ fn simple_preset_card(app: &App) -> Element<'_, Message> {
             row![
                 text("Night brightness").size(14).color(style::TEXT_PRIMARY),
                 horizontal_space(),
-                text(format!("{nb_value}%")).size(14).color(style::TEXT_SECONDARY),
+                text(format!("{nb_value}%"))
+                    .size(14)
+                    .color(style::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
             iced::widget::slider(1u8..=100u8, nb_value, Message::SetSunlightNightBrightness)

@@ -1,17 +1,17 @@
-use iced::widget::{button, column, container, horizontal_space, row, slider, text, toggler};
-use iced::{Alignment, Color, Element, Length};
 use crate::app::{App, Message};
 use crate::style;
+use iced::widget::{button, column, container, horizontal_space, row, slider, text, toggler};
+use iced::{Alignment, Color, Element, Length};
 
 const PRESET_COLORS: [(u8, u8, u8); 8] = [
-    (255, 68, 68),   // red
-    (255, 136, 0),   // orange
-    (255, 204, 0),   // yellow
-    (68, 255, 68),   // green
-    (0, 204, 255),   // cyan
-    (68, 68, 255),   // blue
-    (204, 68, 255),  // purple
-    (255, 68, 170),  // pink
+    (255, 68, 68),  // red
+    (255, 136, 0),  // orange
+    (255, 204, 0),  // yellow
+    (68, 255, 68),  // green
+    (0, 204, 255),  // cyan
+    (68, 68, 255),  // blue
+    (204, 68, 255), // purple
+    (255, 68, 170), // pink
 ];
 
 pub fn view(app: &App) -> Element<'_, Message> {
@@ -22,14 +22,18 @@ pub fn view(app: &App) -> Element<'_, Message> {
         text("Controls").size(24).color(style::TEXT_PRIMARY),
         horizontal_space(),
         text("Power").size(14).color(style::TEXT_SECONDARY),
-        toggler(app.power)
-            .on_toggle(|_| Message::TogglePower),
+        toggler(app.power).on_toggle(|_| Message::TogglePower),
     ]
     .spacing(10)
     .align_y(Alignment::Center);
 
     let brightness_card = crate::widgets::slider_card::slider_card(
-        "Brightness", app.brightness, "%", 1..=100, Message::SetBrightness, Message::SaveConfig,
+        "Brightness",
+        app.brightness,
+        "%",
+        1..=100,
+        Message::SetBrightness,
+        Message::SaveConfig,
     );
 
     // Color card
@@ -84,9 +88,13 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let temp_card = container(
         column![
             row![
-                text("Color Temperature").size(14).color(style::TEXT_PRIMARY),
+                text("Color Temperature")
+                    .size(14)
+                    .color(style::TEXT_PRIMARY),
                 horizontal_space(),
-                text(format!("{}K", app.color_temp)).size(14).color(style::TEXT_SECONDARY),
+                text(format!("{}K", app.color_temp))
+                    .size(14)
+                    .color(style::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
             slider(2000u16..=9000u16, app.color_temp, Message::SetColorTemp)
@@ -103,12 +111,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .padding([16, 18])
     .style(style::card_style);
 
-    column![
-        power_row,
-        brightness_card,
-        color_card,
-        temp_card,
-    ]
-    .spacing(14)
-    .into()
+    column![power_row, brightness_card, color_card, temp_card,]
+        .spacing(14)
+        .into()
 }

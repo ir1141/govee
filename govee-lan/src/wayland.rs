@@ -152,10 +152,21 @@ struct FrameState {
 }
 
 /// Persistent shared-memory buffer reused across captures to avoid per-frame allocation.
+// SAFETY: ShmBuffer contains a raw pointer to mmap'd memory and must not be
+// sent across threads or shared. It is only used within single-threaded
+// WaylandState. Raw pointers are !Send/!Sync by default, enforcing this.
 struct ShmBuffer {
     ptr: *mut u8,
     size: usize,
     fd: OwnedFd,
+}
+
+impl std::fmt::Debug for ShmBuffer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ShmBuffer")
+            .field("size", &self.size)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ShmBuffer {
@@ -213,6 +224,22 @@ struct WaylandState {
     wl_buffer: Option<wl_buffer::WlBuffer>,
 }
 
+impl std::fmt::Debug for WaylandState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WaylandState")
+            .field(
+                "outputs",
+                &self
+                    .outputs
+                    .iter()
+                    .map(|(_, n)| n.as_str())
+                    .collect::<Vec<_>>(),
+            )
+            .field("buffer", &self.buffer)
+            .finish_non_exhaustive()
+    }
+}
+
 impl WaylandState {
     fn new() -> Self {
         Self {
@@ -255,22 +282,19 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
                         Some(registry.bind::<wl_shm::WlShm, _, Self>(name, version.min(1), qh, ()));
                 }
                 "wl_output" => {
-                    let output = registry.bind::<wl_output::WlOutput, _, Self>(
-                        name,
-                        version.min(4),
-                        qh,
-                        (),
-                    );
+                    let output =
+                        registry.bind::<wl_output::WlOutput, _, Self>(name, version.min(4), qh, ());
                     state.outputs.push((output, String::new()));
                 }
                 "zwlr_screencopy_manager_v1" => {
                     state.screencopy_manager = Some(
-                        registry.bind::<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, _, Self>(
-                            name,
-                            version.min(3),
-                            qh,
-                            (),
-                        ),
+                        registry
+                            .bind::<zwlr_screencopy_manager_v1::ZwlrScreencopyManagerV1, _, Self>(
+                                name,
+                                version.min(3),
+                                qh,
+                                (),
+                            ),
                     );
                 }
                 _ => {}
@@ -350,7 +374,9 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
             }
             zwlr_screencopy_frame_v1::Event::BufferDone => {
                 let fs = state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
-                let size = (fs.stride as usize).checked_mul(fs.height as usize).unwrap_or(0);
+                let size = (fs.stride as usize)
+                    .checked_mul(fs.height as usize)
+                    .unwrap_or(0);
                 let format = fs.format;
                 let width = fs.width as i32;
                 let height = fs.height as i32;
@@ -358,7 +384,11 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                 drop(fs);
 
                 if size == 0 {
-                    state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).failed = true;
+                    state
+                        .frame_state
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .failed = true;
                     return;
                 }
 
@@ -372,7 +402,11 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                     match ShmBuffer::new(size) {
                         Ok(buf) => state.buffer = Some(buf),
                         Err(()) => {
-                            state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).failed = true;
+                            state
+                                .frame_state
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .failed = true;
                             return;
                         }
                     }
@@ -394,10 +428,18 @@ impl Dispatch<zwlr_screencopy_frame_v1::ZwlrScreencopyFrameV1, ()> for WaylandSt
                 state.wl_buffer = Some(wl_buf);
             }
             zwlr_screencopy_frame_v1::Event::Ready { .. } => {
-                state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).ready = true;
+                state
+                    .frame_state
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .ready = true;
             }
             zwlr_screencopy_frame_v1::Event::Failed => {
-                state.frame_state.lock().unwrap_or_else(|e| e.into_inner()).failed = true;
+                state
+                    .frame_state
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .failed = true;
             }
             _ => {}
         }
@@ -413,6 +455,14 @@ pub struct ScreenCapturer {
     _conn: Connection,
     queue: EventQueue<WaylandState>,
     state: WaylandState,
+}
+
+impl std::fmt::Debug for ScreenCapturer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScreenCapturer")
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ScreenCapturer {
@@ -435,12 +485,20 @@ impl ScreenCapturer {
             anyhow::bail!("No wl_shm global found");
         }
 
-        Ok(Self { _conn: conn, queue, state })
+        Ok(Self {
+            _conn: conn,
+            queue,
+            state,
+        })
     }
 
     /// List available output names.
     pub fn outputs(&self) -> Vec<String> {
-        self.state.outputs.iter().map(|(_, name)| name.clone()).collect()
+        self.state
+            .outputs
+            .iter()
+            .map(|(_, name)| name.clone())
+            .collect()
     }
 
     /// Capture a frame from the specified output (or first output if None).
@@ -451,7 +509,13 @@ impl ScreenCapturer {
                 .iter()
                 .find(|(_, n)| n == name)
                 .map(|(o, _)| o.clone())
-                .ok_or_else(|| anyhow::anyhow!("Output '{}' not found. Available: {:?}", name, self.outputs()))?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Output '{}' not found. Available: {:?}",
+                        name,
+                        self.outputs()
+                    )
+                })?
         } else {
             self.state
                 .outputs
@@ -462,7 +526,11 @@ impl ScreenCapturer {
 
         // Reset frame state (buffer stays allocated)
         {
-            let mut fs = self.state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
+            let mut fs = self
+                .state
+                .frame_state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             fs.ready = false;
             fs.failed = false;
             fs.buffer_info_received = false;
@@ -498,7 +566,11 @@ impl ScreenCapturer {
 
             self.queue.dispatch_pending(&mut self.state)?;
 
-            let fs = self.state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
+            let fs = self
+                .state
+                .frame_state
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
             if fs.ready {
                 break;
             }
@@ -516,9 +588,14 @@ impl ScreenCapturer {
             wl_buf.destroy();
         }
 
-        let fs = self.state.frame_state.lock().unwrap_or_else(|e| e.into_inner());
-        let buf = self.state.buffer.as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Screen capture completed but no buffer data received"))?;
+        let fs = self
+            .state
+            .frame_state
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let buf = self.state.buffer.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("Screen capture completed but no buffer data received")
+        })?;
         // SAFETY: buf.ptr and buf.size are from the same mmap allocation,
         // sized by ftruncate(size) + mmap(size). The compositor fills this
         // buffer before signaling Ready.

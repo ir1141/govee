@@ -8,7 +8,7 @@ use std::process;
 use std::time::Duration;
 
 use crate::cli::AmbientArgs;
-use crate::{RUNNING, ctrlc_setup};
+use crate::{ctrlc_setup, RUNNING};
 
 /// Run the ambient sync loop, watching for wallpaper theme changes.
 pub fn run_ambient(args: AmbientArgs, ip: Option<String>) {

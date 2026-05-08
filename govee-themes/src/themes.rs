@@ -32,7 +32,11 @@ pub fn pa(pos: f64, r: u8, g: u8, b: u8) -> PA {
 
 /// Shorthand constructor for [`WaveParam`].
 pub fn wp(time_speed: f64, spatial_freq: f64, phase_offset: f64) -> WaveParam {
-    WaveParam { time_speed, spatial_freq, phase_offset }
+    WaveParam {
+        time_speed,
+        spatial_freq,
+        phase_offset,
+    }
 }
 
 /// Sample a color from a palette at position `t` (0.0-1.0).
@@ -70,9 +74,9 @@ pub fn palette_sample(anchors: &[PA], t: f64) -> Rgb {
 pub fn lerp_rgb(a: Rgb, b: Rgb, t: f64) -> Rgb {
     let t = t.clamp(0.0, 1.0);
     (
-        (a.0 as f64 + (b.0 as f64 - a.0 as f64) * t) as u8,
-        (a.1 as f64 + (b.1 as f64 - a.1 as f64) * t) as u8,
-        (a.2 as f64 + (b.2 as f64 - a.2 as f64) * t) as u8,
+        (a.0 as f64 + (b.0 as f64 - a.0 as f64) * t).clamp(0.0, 255.0) as u8,
+        (a.1 as f64 + (b.1 as f64 - a.1 as f64) * t).clamp(0.0, 255.0) as u8,
+        (a.2 as f64 + (b.2 as f64 - a.2 as f64) * t).clamp(0.0, 255.0) as u8,
     )
 }
 
@@ -91,7 +95,11 @@ pub fn hsv_to_rgb(h: f64, s: f64, v: f64) -> Rgb {
         4 => (tv, p, v),
         _ => (v, p, q),
     };
-    ((r * 255.0) as u8, (g * 255.0) as u8, (b * 255.0) as u8)
+    (
+        (r * 255.0).clamp(0.0, 255.0) as u8,
+        (g * 255.0).clamp(0.0, 255.0) as u8,
+        (b * 255.0).clamp(0.0, 255.0) as u8,
+    )
 }
 
 /// Frame delay between animation steps.
@@ -182,16 +190,9 @@ pub enum Behavior {
         shift_speed: f64,
     },
     /// Palette scrolls continuously along the strip.
-    Drift {
-        palette: Vec<PA>,
-        speed: f64,
-    },
+    Drift { palette: Vec<PA>, speed: f64 },
     /// Pulse radiates outward from the strip center.
-    RadiatePulse {
-        color: Rgb,
-        speed: f64,
-        width: f64,
-    },
+    RadiatePulse { color: Rgb, speed: f64, width: f64 },
     /// Slow one-shot progression through a palette over a set duration.
     Progression {
         palette: Vec<PA>,

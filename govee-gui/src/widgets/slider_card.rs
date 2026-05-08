@@ -1,7 +1,7 @@
-use iced::widget::{column, container, horizontal_space, row, slider, text};
-use iced::{Alignment, Element, Length};
 use crate::app::Message;
 use crate::style;
+use iced::widget::{column, container, horizontal_space, row, slider, text};
+use iced::{Alignment, Element, Length};
 
 /// A labeled slider card with value display. Saves config on release, not on every tick.
 pub fn slider_card<'a>(
@@ -48,12 +48,16 @@ pub fn segments_card<'a>(
             row![
                 text("Segments").size(14).color(style::TEXT_PRIMARY),
                 horizontal_space(),
-                text(format!("{clamped}")).size(14).color(style::TEXT_SECONDARY),
+                text(format!("{clamped}"))
+                    .size(14)
+                    .color(style::TEXT_SECONDARY),
             ]
             .align_y(Alignment::Center),
-            slider(1u8..=crate::config::MAX_SEGMENTS as u8, clamped, move |v| on_change(v as usize))
-                .on_release(release_msg)
-                .width(Length::Fill),
+            slider(1u8..=crate::config::MAX_SEGMENTS as u8, clamped, move |v| {
+                on_change(v as usize)
+            })
+            .on_release(release_msg)
+            .width(Length::Fill),
         ]
         .spacing(10),
     )
@@ -70,19 +74,23 @@ pub fn start_stop_button<'a>(
 ) -> Element<'a, Message> {
     if is_active {
         iced::widget::button(
-            iced::widget::text(format!("■ Stop {mode_label}")).size(13).color(iced::Color::WHITE)
+            iced::widget::text(format!("■ Stop {mode_label}"))
+                .size(13)
+                .color(iced::Color::WHITE),
         )
-            .padding([8, 20])
-            .on_press(Message::StopMode)
-            .style(style::danger_action_button())
-            .into()
+        .padding([8, 20])
+        .on_press(Message::StopMode)
+        .style(style::danger_action_button())
+        .into()
     } else {
         iced::widget::button(
-            iced::widget::text(format!("▶ Start {mode_label}")).size(13).color(iced::Color::WHITE)
+            iced::widget::text(format!("▶ Start {mode_label}"))
+                .size(13)
+                .color(iced::Color::WHITE),
         )
-            .padding([8, 20])
-            .on_press(start_msg)
-            .style(style::accent_action_button())
-            .into()
+        .padding([8, 20])
+        .on_press(start_msg)
+        .style(style::accent_action_button())
+        .into()
     }
 }

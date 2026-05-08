@@ -4,24 +4,23 @@
 //! the DreamView binary segment protocol for per-LED control, color utilities,
 //! and optional Wayland screen-capture and PulseAudio audio-analysis modules.
 
-/// JSON and DreamView binary protocol for device communication.
-pub mod protocol;
-/// Multicast-based device discovery on the LAN.
-pub mod discovery;
 /// RGB color manipulation utilities.
 pub mod colors;
+/// Multicast-based device discovery on the LAN.
+pub mod discovery;
+/// JSON and DreamView binary protocol for device communication.
+pub mod protocol;
 
-/// Wayland screen capture via `wlr-screencopy-unstable-v1`.
-#[cfg(feature = "screen")]
-pub mod wayland;
 /// Real-time PulseAudio audio analysis with FFT.
 #[cfg(feature = "audio")]
 pub mod audio;
+/// Wayland screen capture via `wlr-screencopy-unstable-v1`.
+#[cfg(feature = "screen")]
+pub mod wayland;
 
+pub use colors::{color_distance, hex_to_rgb, lerp_color_chain, saturate_color, smooth};
+pub use discovery::{discover_device, resolve_ip, scan_devices, DeviceInfo};
 pub use protocol::{
-    send_turn, send_brightness, send_color, send_color_temp, send_command,
-    razer_activate, razer_deactivate, send_segments, UdpSender,
-    MULTICAST_GROUP, SCAN_PORT, RESPONSE_PORT, CONTROL_PORT,
+    razer_activate, razer_deactivate, send_brightness, send_color, send_color_temp, send_command,
+    send_segments, send_turn, UdpSender, CONTROL_PORT, MULTICAST_GROUP, RESPONSE_PORT, SCAN_PORT,
 };
-pub use colors::{hex_to_rgb, color_distance, smooth, saturate_color, lerp_color_chain};
-pub use discovery::{DeviceInfo, scan_devices, discover_device, resolve_ip};

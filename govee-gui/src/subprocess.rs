@@ -40,7 +40,11 @@ pub fn kill(child: &mut Child) {
     {
         // SAFETY: `child.id()` is the OS PID of a process we spawned and own.
         // Sending SIGTERM to a live child is safe; if already exited, it's a no-op.
-        unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM); }
+        // PID cast: on Linux, valid PIDs fit in i32 (max PID_MAX = 2^22).
+        let pid = child.id() as libc::pid_t;
+        unsafe {
+            libc::kill(pid, libc::SIGTERM);
+        }
     }
     #[cfg(not(unix))]
     {

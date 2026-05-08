@@ -1,10 +1,10 @@
 //! Sidebar navigation widget with page links and multi-device selector.
 
+use crate::app::{Message, Page};
+use crate::style;
 use govee_lan::DeviceInfo;
 use iced::widget::{button, column, container, text};
 use iced::{Element, Length};
-use crate::app::{Message, Page};
-use crate::style;
 
 /// A single navigation button in the sidebar.
 fn nav_button(label: &'static str, page: Page, active: bool) -> Element<'static, Message> {
@@ -17,7 +17,12 @@ fn nav_button(label: &'static str, page: Page, active: bool) -> Element<'static,
 }
 
 /// Render the full sidebar: header, nav links, and device selector (if multiple).
-pub fn view(current_page: Page, device_label: &str, devices: &[DeviceInfo], current_device_ip: Option<&str>) -> Element<'static, Message> {
+pub fn view(
+    current_page: Page,
+    device_label: &str,
+    devices: &[DeviceInfo],
+    current_device_ip: Option<&str>,
+) -> Element<'static, Message> {
     let device_label: String = device_label.to_string();
 
     let header = column![
@@ -40,8 +45,8 @@ pub fn view(current_page: Page, device_label: &str, devices: &[DeviceInfo], curr
 
     if devices.len() > 1 {
         let current_ip: Option<String> = current_device_ip.map(|s| s.to_string());
-        let mut device_list = column![text("Devices").size(11).color(style::TEXT_SECONDARY)]
-            .spacing(2.0);
+        let mut device_list =
+            column![text("Devices").size(11).color(style::TEXT_SECONDARY)].spacing(2.0);
 
         for (idx, dev) in devices.iter().enumerate() {
             let is_selected = current_ip.as_deref() == Some(dev.ip.as_str());

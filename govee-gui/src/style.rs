@@ -98,7 +98,10 @@ pub fn nav_button_style(active: bool) -> impl Fn(&iced::Theme, button::Status) -
             ACCENT_DIM
         } else {
             match status {
-                button::Status::Hovered => Color { a: 0.08, ..ACCENT_DIM },
+                button::Status::Hovered => Color {
+                    a: 0.08,
+                    ..ACCENT_DIM
+                },
                 _ => Color::TRANSPARENT,
             }
         };
@@ -140,7 +143,10 @@ pub fn pill_button(active: bool) -> impl Fn(&iced::Theme, button::Status) -> but
 }
 
 /// Generic action button with custom base and hover colors.
-pub fn action_button(base: Color, hover: Color) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
+pub fn action_button(
+    base: Color,
+    hover: Color,
+) -> impl Fn(&iced::Theme, button::Status) -> button::Style {
     move |_theme, status| {
         let bg = match status {
             button::Status::Hovered => hover,

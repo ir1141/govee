@@ -1,13 +1,15 @@
 //! Theme rendering engine: looks up themes by name, initializes per-segment state,
 //! renders animation frames, and runs the main theme loop with DreamView output.
 
-use govee_themes::themes::{Rgb, PA, Behavior, Delay, ThemeKind, ThemeDef, palette_sample, lerp_rgb, hsv_to_rgb};
-use govee_lan::*;
 use govee_lan::UdpSender;
+use govee_lan::*;
+use govee_themes::themes::{
+    hsv_to_rgb, lerp_rgb, palette_sample, Behavior, Delay, Rgb, ThemeDef, ThemeKind, PA,
+};
 use rand::RngExt;
 use std::time::Duration;
 
-use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
+use crate::{ctrlc_setup, resolve_or_exit, RUNNING};
 
 /// Look up a theme by name from all loaded themes (builtins + user).
 pub fn get_theme(name: &str) -> Option<ThemeDef> {
@@ -19,7 +21,10 @@ pub fn get_theme(name: &str) -> Option<ThemeDef> {
 /// Format the theme list for clap help text.
 pub fn theme_list_display() -> String {
     let themes = govee_themes::load_all_themes();
-    let pairs: Vec<(&str, &str)> = themes.iter().map(|t| (t.name.as_str(), t.category.as_str())).collect();
+    let pairs: Vec<(&str, &str)> = themes
+        .iter()
+        .map(|t| (t.name.as_str(), t.category.as_str()))
+        .collect();
     crate::ui::theme_list_help(&pairs)
 }
 
@@ -27,7 +32,9 @@ pub fn theme_list_display() -> String {
 /// all others start at zero.
 pub(crate) fn init_state(behavior: &Behavior, n_seg: usize) -> Vec<f64> {
     match behavior {
-        Behavior::Heat { .. } => (0..n_seg).map(|i| (i as f64 * 0.4).fract().max(0.3)).collect(),
+        Behavior::Heat { .. } => (0..n_seg)
+            .map(|i| (i as f64 * 0.4).fract().max(0.3))
+            .collect(),
         _ => vec![0.0; n_seg],
     }
 }
@@ -49,41 +56,137 @@ pub(crate) fn render_frame(
     t: f64,
 ) -> Vec<Rgb> {
     match behavior {
-        Behavior::Heat { palette, volatility, spark_chance, spark_boost, dim_chance, dim_range, diffusion } =>
-            render_heat(palette, *volatility, *spark_chance, *spark_boost, *dim_chance, *dim_range, *diffusion, rng, state, n_seg),
-        Behavior::Wave { palette, waves, weights } =>
-            render_wave(palette, waves, weights, n_seg, t),
-        Behavior::Breathe { palette, speed, power } =>
-            render_breathe(palette, *speed, *power, n_seg, t),
-        Behavior::Flash { base_palette, flash_palette, decay, flash_chance, spread, base_wave_speed, base_spatial_freq, flash_threshold } =>
-            render_flash(base_palette, flash_palette, *decay, *flash_chance, *spread, *base_wave_speed, *base_spatial_freq, *flash_threshold, rng, state, n_seg, t),
-        Behavior::Particles { bg, palette, speed, spawn_chance, bright_chance } =>
-            render_particles(*bg, palette, *speed, *spawn_chance, *bright_chance, rng, state, n_seg),
-        Behavior::Twinkle { bg, colors, on_chance, fade_speed } =>
-            render_twinkle(*bg, colors, *on_chance, *fade_speed, rng, state, n_seg),
-        Behavior::HueRotate { speed, saturation, value } =>
-            render_hue_rotate(*speed, *saturation, *value, n_seg, t),
-        Behavior::GradientWave { color_a, color_b, speed } =>
-            render_gradient_wave(*color_a, *color_b, *speed, n_seg, t),
-        Behavior::Strobe { colors, cycle_speed, flash_chance } =>
-            render_strobe(colors, *cycle_speed, *flash_chance, rng, n_seg, t),
-        Behavior::Alternating { colors, sparkle, sparkle_chance, shift_speed } =>
-            render_alternating(colors, *sparkle, *sparkle_chance, *shift_speed, rng, n_seg, t),
-        Behavior::Drift { palette, speed } =>
-            render_drift(palette, *speed, n_seg, t),
-        Behavior::RadiatePulse { color, speed, width } =>
-            render_radiate_pulse(*color, *speed, *width, n_seg, t),
-        Behavior::Progression { palette, duration_secs, spatial_spread } =>
-            render_progression(palette, *duration_secs, *spatial_spread, n_seg, t),
+        Behavior::Heat {
+            palette,
+            volatility,
+            spark_chance,
+            spark_boost,
+            dim_chance,
+            dim_range,
+            diffusion,
+        } => render_heat(
+            palette,
+            *volatility,
+            *spark_chance,
+            *spark_boost,
+            *dim_chance,
+            *dim_range,
+            *diffusion,
+            rng,
+            state,
+            n_seg,
+        ),
+        Behavior::Wave {
+            palette,
+            waves,
+            weights,
+        } => render_wave(palette, waves, weights, n_seg, t),
+        Behavior::Breathe {
+            palette,
+            speed,
+            power,
+        } => render_breathe(palette, *speed, *power, n_seg, t),
+        Behavior::Flash {
+            base_palette,
+            flash_palette,
+            decay,
+            flash_chance,
+            spread,
+            base_wave_speed,
+            base_spatial_freq,
+            flash_threshold,
+        } => render_flash(
+            base_palette,
+            flash_palette,
+            *decay,
+            *flash_chance,
+            *spread,
+            *base_wave_speed,
+            *base_spatial_freq,
+            *flash_threshold,
+            rng,
+            state,
+            n_seg,
+            t,
+        ),
+        Behavior::Particles {
+            bg,
+            palette,
+            speed,
+            spawn_chance,
+            bright_chance,
+        } => render_particles(
+            *bg,
+            palette,
+            *speed,
+            *spawn_chance,
+            *bright_chance,
+            rng,
+            state,
+            n_seg,
+        ),
+        Behavior::Twinkle {
+            bg,
+            colors,
+            on_chance,
+            fade_speed,
+        } => render_twinkle(*bg, colors, *on_chance, *fade_speed, rng, state, n_seg),
+        Behavior::HueRotate {
+            speed,
+            saturation,
+            value,
+        } => render_hue_rotate(*speed, *saturation, *value, n_seg, t),
+        Behavior::GradientWave {
+            color_a,
+            color_b,
+            speed,
+        } => render_gradient_wave(*color_a, *color_b, *speed, n_seg, t),
+        Behavior::Strobe {
+            colors,
+            cycle_speed,
+            flash_chance,
+        } => render_strobe(colors, *cycle_speed, *flash_chance, rng, n_seg, t),
+        Behavior::Alternating {
+            colors,
+            sparkle,
+            sparkle_chance,
+            shift_speed,
+        } => render_alternating(
+            colors,
+            *sparkle,
+            *sparkle_chance,
+            *shift_speed,
+            rng,
+            n_seg,
+            t,
+        ),
+        Behavior::Drift { palette, speed } => render_drift(palette, *speed, n_seg, t),
+        Behavior::RadiatePulse {
+            color,
+            speed,
+            width,
+        } => render_radiate_pulse(*color, *speed, *width, n_seg, t),
+        Behavior::Progression {
+            palette,
+            duration_secs,
+            spatial_spread,
+        } => render_progression(palette, *duration_secs, *spatial_spread, n_seg, t),
     }
 }
 
 /// Cellular-automata fire: random perturbation + spark injection + neighbor diffusion.
 #[allow(clippy::too_many_arguments)]
 fn render_heat(
-    palette: &[PA], volatility: f64, spark_chance: f64, spark_boost: f64,
-    dim_chance: f64, dim_range: (f64, f64), diffusion: f64,
-    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize,
+    palette: &[PA],
+    volatility: f64,
+    spark_chance: f64,
+    spark_boost: f64,
+    dim_chance: f64,
+    dim_range: (f64, f64),
+    diffusion: f64,
+    rng: &mut impl RngExt,
+    state: &mut [f64],
+    n_seg: usize,
 ) -> Vec<Rgb> {
     for s in state.iter_mut().take(n_seg) {
         *s += rng.random_range(-volatility..volatility);
@@ -105,18 +208,33 @@ fn render_heat(
             state[i] = snap[i] * (1.0 - 2.0 * diffusion) + left * diffusion + right * diffusion;
         }
     }
-    state[..n_seg].iter().map(|&h| palette_sample(palette, h)).collect()
+    state[..n_seg]
+        .iter()
+        .map(|&h| palette_sample(palette, h))
+        .collect()
 }
 
 /// Weighted sinusoidal wave superposition sampled through a palette.
-fn render_wave(palette: &[PA], waves: &[govee_themes::themes::WaveParam], weights: &[f64], n_seg: usize, t: f64) -> Vec<Rgb> {
+fn render_wave(
+    palette: &[PA],
+    waves: &[govee_themes::themes::WaveParam],
+    weights: &[f64],
+    n_seg: usize,
+    t: f64,
+) -> Vec<Rgb> {
     (0..n_seg)
         .map(|i| {
             let mut val = 0.0;
             let mut tw = 0.0;
             for (j, w_param) in waves.iter().enumerate() {
                 let w = weights.get(j).copied().unwrap_or(1.0);
-                val += ((t * w_param.time_speed + i as f64 * w_param.spatial_freq + w_param.phase_offset).sin() * 0.5 + 0.5) * w;
+                val += ((t * w_param.time_speed
+                    + i as f64 * w_param.spatial_freq
+                    + w_param.phase_offset)
+                    .sin()
+                    * 0.5
+                    + 0.5)
+                    * w;
                 tw += w;
             }
             palette_sample(palette, val / tw)
@@ -132,9 +250,18 @@ fn render_breathe(palette: &[PA], speed: f64, power: u32, n_seg: usize, t: f64) 
 
 #[allow(clippy::too_many_arguments)]
 fn render_flash(
-    base_palette: &[PA], flash_palette: &[PA], decay: f64, flash_chance: f64,
-    spread: (usize, usize), base_wave_speed: f64, base_spatial_freq: f64, flash_threshold: f64,
-    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize, t: f64,
+    base_palette: &[PA],
+    flash_palette: &[PA],
+    decay: f64,
+    flash_chance: f64,
+    spread: (usize, usize),
+    base_wave_speed: f64,
+    base_spatial_freq: f64,
+    flash_threshold: f64,
+    rng: &mut impl RngExt,
+    state: &mut [f64],
+    n_seg: usize,
+    t: f64,
 ) -> Vec<Rgb> {
     for s in state.iter_mut().take(n_seg) {
         *s *= decay;
@@ -162,8 +289,14 @@ fn render_flash(
 
 #[allow(clippy::too_many_arguments)]
 fn render_particles(
-    bg: Rgb, palette: &[PA], speed: f64, spawn_chance: f64, bright_chance: f64,
-    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize,
+    bg: Rgb,
+    palette: &[PA],
+    speed: f64,
+    spawn_chance: f64,
+    bright_chance: f64,
+    rng: &mut impl RngExt,
+    state: &mut [f64],
+    n_seg: usize,
 ) -> Vec<Rgb> {
     for s in state.iter_mut().take(n_seg) {
         *s *= 1.0 - speed;
@@ -192,8 +325,13 @@ fn render_particles(
 }
 
 fn render_twinkle(
-    bg: Rgb, colors: &[Rgb], on_chance: f64, fade_speed: f64,
-    rng: &mut impl RngExt, state: &mut [f64], n_seg: usize,
+    bg: Rgb,
+    colors: &[Rgb],
+    on_chance: f64,
+    fade_speed: f64,
+    rng: &mut impl RngExt,
+    state: &mut [f64],
+    n_seg: usize,
 ) -> Vec<Rgb> {
     for s in state.iter_mut().take(n_seg) {
         if *s > 0.0 {
@@ -235,8 +373,12 @@ fn render_gradient_wave(color_a: Rgb, color_b: Rgb, speed: f64, n_seg: usize, t:
 }
 
 fn render_strobe(
-    colors: &[Rgb], cycle_speed: f64, flash_chance: f64,
-    rng: &mut impl RngExt, n_seg: usize, t: f64,
+    colors: &[Rgb],
+    cycle_speed: f64,
+    flash_chance: f64,
+    rng: &mut impl RngExt,
+    n_seg: usize,
+    t: f64,
 ) -> Vec<Rgb> {
     (0..n_seg)
         .map(|i| {
@@ -251,8 +393,13 @@ fn render_strobe(
 }
 
 fn render_alternating(
-    colors: &[Rgb], sparkle: Rgb, sparkle_chance: f64, shift_speed: f64,
-    rng: &mut impl RngExt, n_seg: usize, t: f64,
+    colors: &[Rgb],
+    sparkle: Rgb,
+    sparkle_chance: f64,
+    shift_speed: f64,
+    rng: &mut impl RngExt,
+    n_seg: usize,
+    t: f64,
 ) -> Vec<Rgb> {
     let shift = (t * shift_speed) as usize;
     (0..n_seg)
@@ -293,25 +440,24 @@ fn render_radiate_pulse(color: Rgb, speed: f64, width: f64, n_seg: usize, t: f64
         .collect()
 }
 
-fn render_progression(palette: &[PA], duration_secs: f64, spatial_spread: f64, n_seg: usize, t: f64) -> Vec<Rgb> {
+fn render_progression(
+    palette: &[PA],
+    duration_secs: f64,
+    spatial_spread: f64,
+    n_seg: usize,
+    t: f64,
+) -> Vec<Rgb> {
     let progress = (t / duration_secs).min(1.0);
     (0..n_seg)
         .map(|i| {
-            let p = (progress + (i as f64 - n_seg as f64 / 2.0) * spatial_spread)
-                .clamp(0.0, 1.0);
+            let p = (progress + (i as f64 - n_seg as f64 / 2.0) * spatial_spread).clamp(0.0, 1.0);
             palette_sample(palette, p)
         })
         .collect()
 }
 
 /// Run a theme: solid themes send a single color; animated themes loop until Ctrl+C.
-pub fn run_theme(
-    name: &str,
-    ip: Option<String>,
-    brightness: u8,
-    segments: usize,
-    mirror: bool,
-) {
+pub fn run_theme(name: &str, ip: Option<String>, brightness: u8, segments: usize, mirror: bool) {
     let theme = match get_theme(name) {
         Some(t) => t,
         None => {
@@ -335,17 +481,37 @@ pub fn run_theme(
             send_color(&ip, color.0, color.1, color.2).ok();
             {
                 use colored::Colorize;
-                crate::ui::info("Theme", &format!("{} {}", name.white().bold(), format!("[{}]", theme.category).dimmed()));
+                crate::ui::info(
+                    "Theme",
+                    &format!(
+                        "{} {}",
+                        name.white().bold(),
+                        format!("[{}]", theme.category).dimmed()
+                    ),
+                );
                 crate::ui::info("Brightness", &crate::ui::brightness_bar(brightness));
             }
         }
         ThemeKind::Animated { behavior, delay } => {
-            let sender = UdpSender::new(&ip).expect("Failed to create UDP sender");
+            let sender = match UdpSender::new(&ip) {
+                Ok(s) => s,
+                Err(e) => {
+                    crate::ui::error(&format!("Failed to create UDP sender: {e}"));
+                    std::process::exit(1);
+                }
+            };
             crate::dreamview::activate(&ip, brightness, true);
 
             {
                 use colored::Colorize;
-                crate::ui::info("Theme", &format!("{} {}", name.white().bold(), format!("[{}]", theme.category).dimmed()));
+                crate::ui::info(
+                    "Theme",
+                    &format!(
+                        "{} {}",
+                        name.white().bold(),
+                        format!("[{}]", theme.category).dimmed()
+                    ),
+                );
                 crate::ui::info("Brightness", &crate::ui::brightness_bar(brightness));
                 crate::ui::info("Segments", &format!("{segments}"));
                 crate::ui::ctrlc_hint();

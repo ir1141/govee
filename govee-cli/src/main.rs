@@ -3,14 +3,14 @@
 //! Supports one-shot commands (on/off, color, brightness) and continuous modes
 //! (themes, screen capture, audio reactive, ambient wallpaper sync).
 
-mod cli;
-mod themes;
 mod ambient;
-mod screen;
 mod audio_cmd;
-mod sunlight;
-mod ui;
+mod cli;
 mod dreamview;
+mod screen;
+mod sunlight;
+mod themes;
+mod ui;
 
 use clap::Parser;
 use govee_lan::*;
@@ -97,9 +97,18 @@ fn main() {
     match cli.command {
         Command::Scan => {
             ui::discovery_scanning();
-            let devices = scan_devices(SCAN_TIMEOUT);
+            let devices = match scan_devices(SCAN_TIMEOUT) {
+                Ok(devices) => devices,
+                Err(e) => {
+                    ui::error(&format!("Failed to scan for devices: {e}"));
+                    process::exit(1);
+                }
+            };
             if devices.is_empty() {
-                ui::error_hint("No devices found", "Ensure LAN API is enabled in the Govee Home app.");
+                ui::error_hint(
+                    "No devices found",
+                    "Ensure LAN API is enabled in the Govee Home app.",
+                );
                 return;
             }
             for d in &devices {
@@ -111,9 +120,18 @@ fn main() {
                         if d.device.is_empty() { "" } else { &d.device },
                         format!(
                             "WiFi:{} BLE:{}",
-                            if d.wifi_version.is_empty() { "?" } else { &d.wifi_version },
-                            if d.ble_version.is_empty() { "?" } else { &d.ble_version }
-                        ).dimmed()
+                            if d.wifi_version.is_empty() {
+                                "?"
+                            } else {
+                                &d.wifi_version
+                            },
+                            if d.ble_version.is_empty() {
+                                "?"
+                            } else {
+                                &d.ble_version
+                            }
+                        )
+                        .dimmed()
                     );
                     ui::detail(&details);
                 }
@@ -121,12 +139,18 @@ fn main() {
         }
         Command::On => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_turn(&ip, true).ok();
+            if let Err(e) = send_turn(&ip, true) {
+                ui::error(&format!("Failed to turn on: {e}"));
+                process::exit(1);
+            }
             ui::info("Power", &format!("{}", "ON".green()));
         }
         Command::Off => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_turn(&ip, false).ok();
+            if let Err(e) = send_turn(&ip, false) {
+                ui::error(&format!("Failed to turn off: {e}"));
+                process::exit(1);
+            }
             ui::info("Power", &format!("{}", "OFF".red()));
         }
         Command::Brightness { value } => {
@@ -135,12 +159,18 @@ fn main() {
                 process::exit(1);
             }
             let ip = resolve_or_exit(ip.as_deref());
-            send_brightness(&ip, value).ok();
+            if let Err(e) = send_brightness(&ip, value) {
+                ui::error(&format!("Failed to set brightness: {e}"));
+                process::exit(1);
+            }
             ui::info("Brightness", &ui::brightness_bar(value));
         }
         Command::Color { r, g, b } => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_color(&ip, r, g, b).ok();
+            if let Err(e) = send_color(&ip, r, g, b) {
+                ui::error(&format!("Failed to set color: {e}"));
+                process::exit(1);
+            }
             ui::info("Color", &ui::color_swatch(r, g, b));
         }
         Command::Temp { kelvin } => {
@@ -149,12 +179,21 @@ fn main() {
                 process::exit(1);
             }
             let ip = resolve_or_exit(ip.as_deref());
-            send_color_temp(&ip, kelvin).ok();
+            if let Err(e) = send_color_temp(&ip, kelvin) {
+                ui::error(&format!("Failed to set color temp: {e}"));
+                process::exit(1);
+            }
             ui::info("Temp", &format!("{}", format!("{kelvin}K").yellow()));
         }
         Command::Status => {
             let ip = resolve_or_exit(ip.as_deref());
-            let status = send_command(&ip, "devStatus", serde_json::json!({}), cli.debug);
+            let status = match send_command(&ip, "devStatus", serde_json::json!({}), cli.debug) {
+                Ok(v) => v,
+                Err(e) => {
+                    ui::error(&format!("Failed to query device: {e}"));
+                    None
+                }
+            };
             match status {
                 Some(data) => {
                     let s: DevStatus = serde_json::from_value(data).unwrap_or_default();
@@ -167,12 +206,18 @@ fn main() {
                     ui::info("Brightness", &ui::brightness_bar(s.brightness));
 
                     if s.color_tem_in_kelvin > 0 {
-                        ui::info("Temp", &format!("{}", format!("{}K", s.color_tem_in_kelvin).yellow()));
+                        ui::info(
+                            "Temp",
+                            &format!("{}", format!("{}K", s.color_tem_in_kelvin).yellow()),
+                        );
                     } else if let Some(c) = &s.color {
                         ui::info("Color", &ui::color_swatch_full(c.r, c.g, c.b));
                     }
 
-                    ui::info("Device", &format!("{} {}", ip.cyan(), s.sku.as_deref().unwrap_or("").dimmed()));
+                    ui::info(
+                        "Device",
+                        &format!("{} {}", ip.cyan(), s.sku.as_deref().unwrap_or("").dimmed()),
+                    );
                 }
                 None => {
                     ui::error_hint(
@@ -185,22 +230,44 @@ fn main() {
         }
         Command::Sleep => {
             let ip = resolve_or_exit(ip.as_deref());
-            send_color(&ip, 0, 0, 0).ok();
+            if let Err(e) = send_color(&ip, 0, 0, 0) {
+                ui::error(&format!("Failed to set color: {e}"));
+                process::exit(1);
+            }
             std::thread::sleep(Duration::from_millis(50));
-            send_brightness(&ip, 1).ok();
+            if let Err(e) = send_brightness(&ip, 1) {
+                ui::error(&format!("Failed to set brightness: {e}"));
+                process::exit(1);
+            }
             ui::info("Sleep", &format!("{}", "dark but responsive".dimmed()));
         }
         Command::Reset => {
             let ip = resolve_or_exit(ip.as_deref());
             let _ = razer_deactivate(&ip);
-            send_turn(&ip, true).ok();
+            if let Err(e) = send_turn(&ip, true) {
+                ui::error(&format!("Failed to turn on: {e}"));
+                process::exit(1);
+            }
             std::thread::sleep(Duration::from_millis(50));
-            send_brightness(&ip, 100).ok();
+            if let Err(e) = send_brightness(&ip, 100) {
+                ui::error(&format!("Failed to set brightness: {e}"));
+                process::exit(1);
+            }
             std::thread::sleep(Duration::from_millis(50));
-            send_color_temp(&ip, 4000).ok();
-            ui::info("Reset", &format!("{}", "on · 100% · 4000K warm white".dimmed()));
+            if let Err(e) = send_color_temp(&ip, 4000) {
+                ui::error(&format!("Failed to set color temp: {e}"));
+                process::exit(1);
+            }
+            ui::info(
+                "Reset",
+                &format!("{}", "on · 100% · 4000K warm white".dimmed()),
+            );
         }
-        Command::Theme { name, brightness, segments } => {
+        Command::Theme {
+            name,
+            brightness,
+            segments,
+        } => {
             themes::run_theme(&name.to_lowercase(), ip, brightness, segments, cli.mirror);
         }
         Command::Ambient(args) => ambient::run_ambient(args, ip),

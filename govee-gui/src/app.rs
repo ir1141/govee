@@ -3,14 +3,14 @@
 //! The [`App`] struct owns device state, configuration, subprocess management,
 //! and all page routing for the iced application.
 
-use govee_lan::DeviceInfo;
-use govee_themes::{ThemeDef, ThemeKind, load_all_themes};
-use iced::widget::{column, container, row};
-use iced::{Element, Length, Task};
-use std::time::Duration;
 use crate::config::{GuiConfig, MAX_SEGMENTS};
 use crate::pages;
 use crate::widgets::{sidebar, status_bar};
+use govee_lan::DeviceInfo;
+use govee_themes::{load_all_themes, ThemeDef, ThemeKind};
+use iced::widget::{column, container, row};
+use iced::{Element, Length, Task};
+use std::time::Duration;
 
 /// Transient text buffers for the sunlight page's four text inputs.
 /// Never persisted — the parsed, validated values live on `config.sunlight`.
@@ -44,15 +44,21 @@ enum TriState<T> {
 
 /// Commit a tri-state validation result into `slot`/`err`.
 /// Returns true iff the value was `Valid` (caller should then persist).
-fn apply_tristate<T>(
-    result: TriState<T>,
-    slot: &mut Option<T>,
-    err: &mut Option<String>,
-) -> bool {
+fn apply_tristate<T>(result: TriState<T>, slot: &mut Option<T>, err: &mut Option<String>) -> bool {
     match result {
-        TriState::Valid(v) => { *slot = Some(v); *err = None; true }
-        TriState::Incomplete => { *err = None; false }
-        TriState::Invalid(e) => { *err = Some(e); false }
+        TriState::Valid(v) => {
+            *slot = Some(v);
+            *err = None;
+            true
+        }
+        TriState::Incomplete => {
+            *err = None;
+            false
+        }
+        TriState::Invalid(e) => {
+            *err = Some(e);
+            false
+        }
     }
 }
 
@@ -77,8 +83,12 @@ fn validate_time(s: &str) -> TriState<String> {
     let t = s;
     let bytes = t.as_bytes();
 
-    fn hh_first_ok(c: u8) -> bool { matches!(c, b'0'..=b'2') }
-    fn digit(c: u8) -> bool { c.is_ascii_digit() }
+    fn hh_first_ok(c: u8) -> bool {
+        matches!(c, b'0'..=b'2')
+    }
+    fn digit(c: u8) -> bool {
+        c.is_ascii_digit()
+    }
 
     match bytes.len() {
         0 => TriState::Incomplete,
@@ -92,7 +102,11 @@ fn validate_time(s: &str) -> TriState<String> {
         2 => {
             if digit(bytes[0]) && digit(bytes[1]) {
                 let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
-                if h <= 23 { TriState::Incomplete } else { TriState::Invalid("hour 00-23".into()) }
+                if h <= 23 {
+                    TriState::Incomplete
+                } else {
+                    TriState::Invalid("hour 00-23".into())
+                }
             } else {
                 TriState::Invalid("expected HH:MM".into())
             }
@@ -100,7 +114,11 @@ fn validate_time(s: &str) -> TriState<String> {
         3 => {
             if digit(bytes[0]) && digit(bytes[1]) && bytes[2] == b':' {
                 let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
-                if h <= 23 { TriState::Incomplete } else { TriState::Invalid("hour 00-23".into()) }
+                if h <= 23 {
+                    TriState::Incomplete
+                } else {
+                    TriState::Invalid("hour 00-23".into())
+                }
             } else {
                 TriState::Invalid("expected HH:MM".into())
             }
@@ -109,13 +127,22 @@ fn validate_time(s: &str) -> TriState<String> {
             if digit(bytes[0]) && digit(bytes[1]) && bytes[2] == b':' && digit(bytes[3]) {
                 let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
                 let m_hi = bytes[3] - b'0';
-                if h <= 23 && m_hi <= 5 { TriState::Incomplete } else { TriState::Invalid("hour 00-23, minute 00-59".into()) }
+                if h <= 23 && m_hi <= 5 {
+                    TriState::Incomplete
+                } else {
+                    TriState::Invalid("hour 00-23, minute 00-59".into())
+                }
             } else {
                 TriState::Invalid("expected HH:MM".into())
             }
         }
         5 => {
-            if digit(bytes[0]) && digit(bytes[1]) && bytes[2] == b':' && digit(bytes[3]) && digit(bytes[4]) {
+            if digit(bytes[0])
+                && digit(bytes[1])
+                && bytes[2] == b':'
+                && digit(bytes[3])
+                && digit(bytes[4])
+            {
                 let h = (bytes[0] - b'0') * 10 + (bytes[1] - b'0');
                 let m = (bytes[3] - b'0') * 10 + (bytes[4] - b'0');
                 if h <= 23 && m <= 59 {
@@ -234,14 +261,18 @@ impl App {
     fn populate_sunlight_errors_from_inputs(&mut self) {
         if self.config.sunlight.use_location {
             if self.config.sunlight.lat.is_none() {
-                if let TriState::Invalid(e) = validate_latlon(&self.sunlight_inputs.lat, 90.0, "latitude") {
+                if let TriState::Invalid(e) =
+                    validate_latlon(&self.sunlight_inputs.lat, 90.0, "latitude")
+                {
                     self.sunlight_errors.lat = Some(e);
                 } else {
                     self.sunlight_errors.lat = Some("set latitude".into());
                 }
             }
             if self.config.sunlight.lon.is_none() {
-                if let TriState::Invalid(e) = validate_latlon(&self.sunlight_inputs.lon, 180.0, "longitude") {
+                if let TriState::Invalid(e) =
+                    validate_latlon(&self.sunlight_inputs.lon, 180.0, "longitude")
+                {
                     self.sunlight_errors.lon = Some(e);
                 } else {
                     self.sunlight_errors.lon = Some("set longitude".into());
@@ -269,6 +300,7 @@ impl App {
     fn stop_subprocess(&mut self) {
         if let Some(ref mut child) = self.subprocess {
             crate::subprocess::kill(child);
+            let _ = child.wait();
         }
         self.subprocess = None;
         self.active_theme = None;
@@ -285,33 +317,49 @@ impl App {
         match mode {
             "screen" => {
                 let s = &self.config.screen;
-                self.start_subprocess("screen", vec![
-                    "screen".into(),
-                    "--fps".into(), s.fps.to_string(),
-                    "--brightness".into(), s.brightness.to_string(),
-                    "--segments".into(), s.segments.to_string(),
-                ]);
+                self.start_subprocess(
+                    "screen",
+                    vec![
+                        "screen".into(),
+                        "--fps".into(),
+                        s.fps.to_string(),
+                        "--brightness".into(),
+                        s.brightness.to_string(),
+                        "--segments".into(),
+                        s.segments.to_string(),
+                    ],
+                );
             }
             "audio" => {
                 let a = &self.config.audio;
                 let mut args = vec![
                     "audio".into(),
-                    "--mode".into(), a.mode.clone(),
-                    "--palette".into(), a.palette.clone(),
-                    "--brightness".into(), a.brightness.to_string(),
-                    "--segments".into(), a.segments.to_string(),
-                    "--sensitivity".into(), a.sensitivity.to_string(),
+                    "--mode".into(),
+                    a.mode.clone(),
+                    "--palette".into(),
+                    a.palette.clone(),
+                    "--brightness".into(),
+                    a.brightness.to_string(),
+                    "--segments".into(),
+                    a.segments.to_string(),
+                    "--sensitivity".into(),
+                    a.sensitivity.to_string(),
                 ];
-                if a.gradient { args.push("--gradient".into()); }
+                if a.gradient {
+                    args.push("--gradient".into());
+                }
                 self.start_subprocess("audio", args);
             }
             "ambient" => {
                 let amb = &self.config.ambient;
                 let mut args = vec![
                     "ambient".into(),
-                    "--brightness".into(), amb.brightness.to_string(),
+                    "--brightness".into(),
+                    amb.brightness.to_string(),
                 ];
-                if amb.dim { args.push("--dim".into()); }
+                if amb.dim {
+                    args.push("--dim".into());
+                }
                 self.start_subprocess("ambient", args);
             }
             "sunlight" => {
@@ -331,7 +379,9 @@ impl App {
         self.stop_subprocess();
         if let Some(ref dev) = self.device {
             let mut args = args;
-            if self.mirror { args.push("--mirror".into()); }
+            if self.mirror {
+                args.push("--mirror".into());
+            }
             let ip = dev.ip.clone();
             let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
             if let Ok(child) = crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
@@ -362,8 +412,16 @@ impl App {
         let color_temp = config.controls.color_temp;
         let mirror = config.screen.mirror;
         let sunlight_inputs = SunlightInputs {
-            lat: config.sunlight.lat.map(|v| v.to_string()).unwrap_or_default(),
-            lon: config.sunlight.lon.map(|v| v.to_string()).unwrap_or_default(),
+            lat: config
+                .sunlight
+                .lat
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
+            lon: config
+                .sunlight
+                .lon
+                .map(|v| v.to_string())
+                .unwrap_or_default(),
             sunrise: config.sunlight.sunrise.clone().unwrap_or_default(),
             sunset: config.sunlight.sunset.clone().unwrap_or_default(),
         };
@@ -389,9 +447,20 @@ impl App {
         };
         let init_task = Task::perform(
             async {
-                tokio::task::spawn_blocking(|| govee_lan::scan_devices(Duration::from_secs(2)))
-                    .await
-                    .unwrap_or_default()
+                tokio::task::spawn_blocking(|| {
+                    match govee_lan::scan_devices(Duration::from_secs(2)) {
+                        Ok(devices) => devices,
+                        Err(e) => {
+                            eprintln!("govee-gui: failed to scan for devices: {e}");
+                            Vec::new()
+                        }
+                    }
+                })
+                .await
+                .unwrap_or_else(|e| {
+                    eprintln!("govee-gui: discovery task failed: {e}");
+                    Vec::new()
+                })
             },
             Message::DevicesDiscovered,
         );
@@ -399,9 +468,8 @@ impl App {
     }
 
     pub fn subscription(&self) -> iced::Subscription<Message> {
-        let mut subs = vec![
-            iced::time::every(Duration::from_secs(10)).map(|_| Message::DiscoveryTick),
-        ];
+        let mut subs =
+            vec![iced::time::every(Duration::from_secs(10)).map(|_| Message::DiscoveryTick)];
         if self.subprocess.is_some() {
             subs.push(iced::time::every(Duration::from_secs(1)).map(|_| Message::Tick));
         }
@@ -429,9 +497,7 @@ impl App {
                     let ip = dev.ip.clone();
                     let on = self.power;
                     return Task::perform(
-                        async move {
-                            govee_lan::send_turn(&ip, on).map_err(|e| e.to_string())
-                        },
+                        async move { govee_lan::send_turn(&ip, on).map_err(|e| e.to_string()) },
                         |_| Message::DeviceCommandDone,
                     );
                 }
@@ -442,9 +508,7 @@ impl App {
                 if let Some(ref dev) = self.device {
                     let ip = dev.ip.clone();
                     return Task::perform(
-                        async move {
-                            govee_lan::send_brightness(&ip, value).map_err(|e| e.to_string())
-                        },
+                        async move { govee_lan::send_brightness(&ip, value).map_err(|e| e.to_string()) },
                         |_| Message::DeviceCommandDone,
                     );
                 }
@@ -455,9 +519,7 @@ impl App {
                 if let Some(ref dev) = self.device {
                     let ip = dev.ip.clone();
                     return Task::perform(
-                        async move {
-                            govee_lan::send_color(&ip, r, g, b).map_err(|e| e.to_string())
-                        },
+                        async move { govee_lan::send_color(&ip, r, g, b).map_err(|e| e.to_string()) },
                         |_| Message::DeviceCommandDone,
                     );
                 }
@@ -479,9 +541,20 @@ impl App {
             Message::DiscoveryTick => {
                 return Task::perform(
                     async {
-                        tokio::task::spawn_blocking(|| govee_lan::scan_devices(Duration::from_secs(2)))
-                            .await
-                            .unwrap_or_default()
+                        tokio::task::spawn_blocking(|| {
+                            match govee_lan::scan_devices(Duration::from_secs(2)) {
+                                Ok(devices) => devices,
+                                Err(e) => {
+                                    eprintln!("govee-gui: failed to scan for devices: {e}");
+                                    Vec::new()
+                                }
+                            }
+                        })
+                        .await
+                        .unwrap_or_else(|e| {
+                            eprintln!("govee-gui: discovery task failed: {e}");
+                            Vec::new()
+                        })
                     },
                     Message::DevicesDiscovered,
                 );
@@ -528,9 +601,12 @@ impl App {
                         ThemeKind::Animated { .. } => {
                             let ip = dev.ip.clone();
                             let mut args = vec!["theme".to_string(), name.clone()];
-                            if self.mirror { args.push("--mirror".into()); }
+                            if self.mirror {
+                                args.push("--mirror".into());
+                            }
                             let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-                            if let Ok(child) = crate::subprocess::spawn_govee(&arg_refs, Some(&ip)) {
+                            if let Ok(child) = crate::subprocess::spawn_govee(&arg_refs, Some(&ip))
+                            {
                                 self.subprocess = Some(child);
                                 self.active_theme = Some(name);
                                 self.subprocess_start = Some(std::time::Instant::now());
@@ -557,18 +633,50 @@ impl App {
                     self.elapsed_secs = start.elapsed().as_secs();
                 }
             }
-            Message::SetScreenFps(v) => { self.config.screen.fps = v; }
-            Message::SetScreenBrightness(v) => { self.config.screen.brightness = v; }
-            Message::SetScreenSegments(v) => { self.config.screen.segments = v.min(MAX_SEGMENTS); }
-            Message::SetAudioMode(v) => { self.config.audio.mode = v; self.config.save(); self.restart_if_active("audio"); }
-            Message::SetAudioPalette(v) => { self.config.audio.palette = v; self.config.save(); self.restart_if_active("audio"); }
-            Message::SetAudioBrightness(v) => { self.config.audio.brightness = v; }
-            Message::SetAudioSensitivity(v) => { self.config.audio.sensitivity = v as f64 / 10.0; }
-            Message::SetAudioSegments(v) => { self.config.audio.segments = v.min(MAX_SEGMENTS); }
-            Message::ToggleAudioGradient(v) => { self.config.audio.gradient = v; self.config.save(); self.restart_if_active("audio"); }
-            Message::SetAmbientBrightness(v) => { self.config.ambient.brightness = v; }
-            Message::SaveConfig => { self.config.save(); }
-            Message::ToggleAmbientDim(v) => { self.config.ambient.dim = v; self.config.save(); self.restart_if_active("ambient"); }
+            Message::SetScreenFps(v) => {
+                self.config.screen.fps = v;
+            }
+            Message::SetScreenBrightness(v) => {
+                self.config.screen.brightness = v;
+            }
+            Message::SetScreenSegments(v) => {
+                self.config.screen.segments = v.min(MAX_SEGMENTS);
+            }
+            Message::SetAudioMode(v) => {
+                self.config.audio.mode = v;
+                self.config.save();
+                self.restart_if_active("audio");
+            }
+            Message::SetAudioPalette(v) => {
+                self.config.audio.palette = v;
+                self.config.save();
+                self.restart_if_active("audio");
+            }
+            Message::SetAudioBrightness(v) => {
+                self.config.audio.brightness = v;
+            }
+            Message::SetAudioSensitivity(v) => {
+                self.config.audio.sensitivity = v as f64 / 10.0;
+            }
+            Message::SetAudioSegments(v) => {
+                self.config.audio.segments = v.min(MAX_SEGMENTS);
+            }
+            Message::ToggleAudioGradient(v) => {
+                self.config.audio.gradient = v;
+                self.config.save();
+                self.restart_if_active("audio");
+            }
+            Message::SetAmbientBrightness(v) => {
+                self.config.ambient.brightness = v;
+            }
+            Message::SaveConfig => {
+                self.config.save();
+            }
+            Message::ToggleAmbientDim(v) => {
+                self.config.ambient.dim = v;
+                self.config.save();
+                self.restart_if_active("ambient");
+            }
             Message::ToggleMirror(v) => {
                 self.mirror = v;
                 self.config.screen.mirror = v;
@@ -580,30 +688,53 @@ impl App {
             }
             Message::StartScreen => {
                 let s = &self.config.screen;
-                self.start_subprocess("screen", vec![
-                    "screen".into(),
-                    "--fps".into(), s.fps.to_string(),
-                    "--brightness".into(), s.brightness.to_string(),
-                    "--segments".into(), s.segments.to_string(),
-                ]);
+                self.start_subprocess(
+                    "screen",
+                    vec![
+                        "screen".into(),
+                        "--fps".into(),
+                        s.fps.to_string(),
+                        "--brightness".into(),
+                        s.brightness.to_string(),
+                        "--segments".into(),
+                        s.segments.to_string(),
+                    ],
+                );
             }
             Message::StartAudio => {
                 let a = &self.config.audio;
                 let mut args = vec![
                     "audio".into(),
-                    "--mode".into(), a.mode.clone(),
-                    "--palette".into(), a.palette.clone(),
-                    "--brightness".into(), a.brightness.to_string(),
-                    "--segments".into(), a.segments.to_string(),
-                    "--sensitivity".into(), a.sensitivity.to_string(),
+                    "--mode".into(),
+                    a.mode.clone(),
+                    "--palette".into(),
+                    a.palette.clone(),
+                    "--brightness".into(),
+                    a.brightness.to_string(),
+                    "--segments".into(),
+                    a.segments.to_string(),
+                    "--sensitivity".into(),
+                    a.sensitivity.to_string(),
                 ];
-                if a.gradient { args.push("--gradient".into()); }
+                if a.gradient {
+                    args.push("--gradient".into());
+                }
                 self.start_subprocess("audio", args);
             }
-            Message::SetSunlightPreset(v) => { self.config.sunlight.preset = v; self.config.save(); self.restart_if_active("sunlight"); }
-            Message::SetSunlightBrightness(v) => { self.config.sunlight.brightness = v; }
-            Message::SetSunlightSegments(v) => { self.config.sunlight.segments = v.min(MAX_SEGMENTS); }
-            Message::SetSunlightTransition(v) => { self.config.sunlight.transition = v; }
+            Message::SetSunlightPreset(v) => {
+                self.config.sunlight.preset = v;
+                self.config.save();
+                self.restart_if_active("sunlight");
+            }
+            Message::SetSunlightBrightness(v) => {
+                self.config.sunlight.brightness = v;
+            }
+            Message::SetSunlightSegments(v) => {
+                self.config.sunlight.segments = v.min(MAX_SEGMENTS);
+            }
+            Message::SetSunlightTransition(v) => {
+                self.config.sunlight.transition = v;
+            }
             Message::StartSunlight => {
                 if !self.config.sunlight.is_restartable() {
                     self.populate_sunlight_errors_from_inputs();
@@ -621,28 +752,44 @@ impl App {
             Message::EditSunlightLat(s) => {
                 self.sunlight_inputs.lat = s;
                 let r = validate_latlon(&self.sunlight_inputs.lat, 90.0, "latitude");
-                if apply_tristate(r, &mut self.config.sunlight.lat, &mut self.sunlight_errors.lat) {
+                if apply_tristate(
+                    r,
+                    &mut self.config.sunlight.lat,
+                    &mut self.sunlight_errors.lat,
+                ) {
                     self.config.save();
                 }
             }
             Message::EditSunlightLon(s) => {
                 self.sunlight_inputs.lon = s;
                 let r = validate_latlon(&self.sunlight_inputs.lon, 180.0, "longitude");
-                if apply_tristate(r, &mut self.config.sunlight.lon, &mut self.sunlight_errors.lon) {
+                if apply_tristate(
+                    r,
+                    &mut self.config.sunlight.lon,
+                    &mut self.sunlight_errors.lon,
+                ) {
                     self.config.save();
                 }
             }
             Message::EditSunlightSunrise(s) => {
                 self.sunlight_inputs.sunrise = s;
                 let r = validate_time(&self.sunlight_inputs.sunrise);
-                if apply_tristate(r, &mut self.config.sunlight.sunrise, &mut self.sunlight_errors.sunrise) {
+                if apply_tristate(
+                    r,
+                    &mut self.config.sunlight.sunrise,
+                    &mut self.sunlight_errors.sunrise,
+                ) {
                     self.config.save();
                 }
             }
             Message::EditSunlightSunset(s) => {
                 self.sunlight_inputs.sunset = s;
                 let r = validate_time(&self.sunlight_inputs.sunset);
-                if apply_tristate(r, &mut self.config.sunlight.sunset, &mut self.sunlight_errors.sunset) {
+                if apply_tristate(
+                    r,
+                    &mut self.config.sunlight.sunset,
+                    &mut self.sunlight_errors.sunset,
+                ) {
                     self.config.save();
                 }
             }
@@ -654,8 +801,12 @@ impl App {
                     self.populate_sunlight_errors_from_inputs();
                 }
             }
-            Message::SetSunlightDayTemp(v) => { self.config.sunlight.day_temp = v; }
-            Message::SetSunlightNightTemp(v) => { self.config.sunlight.night_temp = v; }
+            Message::SetSunlightDayTemp(v) => {
+                self.config.sunlight.day_temp = v;
+            }
+            Message::SetSunlightNightTemp(v) => {
+                self.config.sunlight.night_temp = v;
+            }
             Message::ToggleSunlightNightBrightnessOverride(on) => {
                 self.config.sunlight.night_brightness = if on {
                     Some(self.config.sunlight.night_brightness.unwrap_or(30))
@@ -668,17 +819,32 @@ impl App {
             Message::SetSunlightNightBrightness(v) => {
                 self.config.sunlight.night_brightness = Some(v);
             }
-            Message::ApplyScreenSettings => { self.config.save(); self.restart_if_active("screen"); }
-            Message::ApplyAudioSettings => { self.config.save(); self.restart_if_active("audio"); }
-            Message::ApplyAmbientSettings => { self.config.save(); self.restart_if_active("ambient"); }
-            Message::ApplySunlightSettings => { self.config.save(); self.restart_if_active("sunlight"); }
+            Message::ApplyScreenSettings => {
+                self.config.save();
+                self.restart_if_active("screen");
+            }
+            Message::ApplyAudioSettings => {
+                self.config.save();
+                self.restart_if_active("audio");
+            }
+            Message::ApplyAmbientSettings => {
+                self.config.save();
+                self.restart_if_active("ambient");
+            }
+            Message::ApplySunlightSettings => {
+                self.config.save();
+                self.restart_if_active("sunlight");
+            }
             Message::StartAmbient => {
                 let amb = &self.config.ambient;
                 let mut args = vec![
                     "ambient".into(),
-                    "--brightness".into(), amb.brightness.to_string(),
+                    "--brightness".into(),
+                    amb.brightness.to_string(),
                 ];
-                if amb.dim { args.push("--dim".into()); }
+                if amb.dim {
+                    args.push("--dim".into());
+                }
                 self.start_subprocess("ambient", args);
             }
         }

@@ -1,11 +1,11 @@
 //! Themes page: filterable grid of theme cards with palette previews and one-click activation.
 
-use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
-use iced::{Border, Color, Element, Length, Shadow, Vector};
-use iced::widget::Row;
-use govee_themes::ThemeKind;
 use crate::app::{App, Message};
 use crate::style;
+use govee_themes::ThemeKind;
+use iced::widget::Row;
+use iced::widget::{button, column, container, horizontal_space, row, scrollable, text};
+use iced::{Border, Color, Element, Length, Shadow, Vector};
 
 fn rgb_color(r: u8, g: u8, b: u8) -> Color {
     Color::from_rgb(r as f32 / 255.0, g as f32 / 255.0, b as f32 / 255.0)
@@ -59,7 +59,10 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let is_custom = |c: &str| !govee_themes::BUILTIN_CATEGORIES.contains(&c);
 
     let display_cats: Vec<String> = if app.theme_filter == "all" {
-        let mut cats: Vec<String> = govee_themes::BUILTIN_CATEGORIES.iter().map(|s: &&str| s.to_string()).collect();
+        let mut cats: Vec<String> = govee_themes::BUILTIN_CATEGORIES
+            .iter()
+            .map(|s: &&str| s.to_string())
+            .collect();
         for t in &app.themes {
             if is_custom(&t.category) && !cats.iter().any(|c| c == &t.category) {
                 cats.push(t.category.clone());
@@ -90,9 +93,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             continue;
         }
 
-        let cat_label = text(cat.to_uppercase())
-            .size(12)
-            .color(style::TEXT_MUTED);
+        let cat_label = text(cat.to_uppercase()).size(12).color(style::TEXT_MUTED);
 
         let mut grid = column![].spacing(8);
         let mut current_row: Vec<Element<Message>> = vec![];
@@ -107,9 +108,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             }
         }
 
-        content_col = content_col.push(
-            column![cat_label, grid].spacing(6)
-        );
+        content_col = content_col.push(column![cat_label, grid].spacing(6));
     }
 
     column![
@@ -117,7 +116,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
         scrollable(
             container(content_col)
                 .width(Length::Fill)
-                .padding(iced::Padding { top: 0.0, right: 0.0, bottom: 20.0, left: 0.0 }),
+                .padding(iced::Padding {
+                    top: 0.0,
+                    right: 0.0,
+                    bottom: 20.0,
+                    left: 0.0
+                }),
         ),
     ]
     .spacing(16)
@@ -134,18 +138,18 @@ fn extract_preview_colors(behavior: &govee_themes::Behavior) -> Vec<Color> {
         | Behavior::Wave { palette, .. }
         | Behavior::Breathe { palette, .. }
         | Behavior::Drift { palette, .. }
-        | Behavior::Progression { palette, .. } => {
-            (0..4).map(|i| {
+        | Behavior::Progression { palette, .. } => (0..4)
+            .map(|i| {
                 let (r, g, b) = palette_sample(palette, i as f64 / 3.0);
                 rgb_color(r, g, b)
-            }).collect()
-        }
-        Behavior::Flash { base_palette, .. } => {
-            (0..4).map(|i| {
+            })
+            .collect(),
+        Behavior::Flash { base_palette, .. } => (0..4)
+            .map(|i| {
                 let (r, g, b) = palette_sample(base_palette, i as f64 / 3.0);
                 rgb_color(r, g, b)
-            }).collect()
-        }
+            })
+            .collect(),
         Behavior::Particles { bg, palette, .. } => {
             let mut colors = vec![rgb_color(bg.0, bg.1, bg.2)];
             for i in 0..3 {
@@ -161,23 +165,28 @@ fn extract_preview_colors(behavior: &govee_themes::Behavior) -> Vec<Color> {
             }
             out
         }
-        Behavior::GradientWave { color_a, color_b, .. } => {
+        Behavior::GradientWave {
+            color_a, color_b, ..
+        } => {
             vec![
                 rgb_color(color_a.0, color_a.1, color_a.2),
                 rgb_color(color_b.0, color_b.1, color_b.2),
             ]
         }
-        Behavior::Strobe { colors, .. } | Behavior::Alternating { colors, .. } => {
-            colors.iter().take(4).map(|&(r, g, b)| {
+        Behavior::Strobe { colors, .. } | Behavior::Alternating { colors, .. } => colors
+            .iter()
+            .take(4)
+            .map(|&(r, g, b)| rgb_color(r, g, b))
+            .collect(),
+        Behavior::HueRotate {
+            saturation, value, ..
+        } => (0..4)
+            .map(|i| {
+                let (r, g, b) =
+                    govee_themes::themes::hsv_to_rgb(i as f64 / 4.0, *saturation, *value);
                 rgb_color(r, g, b)
-            }).collect()
-        }
-        Behavior::HueRotate { saturation, value, .. } => {
-            (0..4).map(|i| {
-                let (r, g, b) = govee_themes::themes::hsv_to_rgb(i as f64 / 4.0, *saturation, *value);
-                rgb_color(r, g, b)
-            }).collect()
-        }
+            })
+            .collect(),
         Behavior::RadiatePulse { color, .. } => {
             vec![rgb_color(color.0, color.1, color.2)]
         }
@@ -203,45 +212,48 @@ fn theme_card<'a>(theme: &govee_themes::ThemeDef, is_active: bool) -> Element<'a
         }
         ThemeKind::Animated { behavior, .. } => {
             let colors = extract_preview_colors(behavior);
-            let segments: Vec<Element<'a, Message>> = colors.into_iter().map(|c| {
-                container(iced::widget::Space::new(Length::Fill, COLOR_BAND_HEIGHT))
-                    .width(Length::Fill)
-                    .style(move |_theme| container::Style {
-                        background: Some(iced::Background::Color(c)),
-                        ..Default::default()
-                    })
-                    .into()
-            }).collect();
+            let segments: Vec<Element<'a, Message>> = colors
+                .into_iter()
+                .map(|c| {
+                    container(iced::widget::Space::new(Length::Fill, COLOR_BAND_HEIGHT))
+                        .width(Length::Fill)
+                        .style(move |_theme| container::Style {
+                            background: Some(iced::Background::Color(c)),
+                            ..Default::default()
+                        })
+                        .into()
+                })
+                .collect();
             Row::with_children(segments).spacing(0).into()
         }
     };
 
     // Info section
-    let mut info_col = column![
-        text(theme.name.clone()).size(13).color(style::TEXT_PRIMARY)
-    ]
-    .spacing(2);
+    let mut info_col =
+        column![text(theme.name.clone()).size(13).color(style::TEXT_PRIMARY)].spacing(2);
 
     if matches!(&theme.kind, ThemeKind::Animated { .. }) {
-        info_col = info_col.push(
-            text("Animated").size(11).color(style::TEXT_MUTED),
-        );
+        info_col = info_col.push(text("Animated").size(11).color(style::TEXT_MUTED));
     }
 
     if is_active {
-        info_col = info_col.push(
-            text("● Active").size(11).color(style::ACCENT_LIGHT),
-        );
+        info_col = info_col.push(text("● Active").size(11).color(style::ACCENT_LIGHT));
     }
 
-    let inner = column![band, container(info_col).padding([8, 10])]
-        .spacing(0);
+    let inner = column![band, container(info_col).padding([8, 10])].spacing(0);
 
-    let border_color = if is_active { style::ACCENT } else { Color::TRANSPARENT };
+    let border_color = if is_active {
+        style::ACCENT
+    } else {
+        Color::TRANSPARENT
+    };
 
     let active_shadow = if is_active {
         Shadow {
-            color: Color { a: 0.3, ..style::ACCENT },
+            color: Color {
+                a: 0.3,
+                ..style::ACCENT
+            },
             offset: Vector::new(0.0, 0.0),
             blur_radius: 12.0,
         }

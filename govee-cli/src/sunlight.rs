@@ -30,7 +30,7 @@ use govee_themes::themes::{pa, wp, Behavior, Delay, Rgb};
 use std::time::Duration;
 
 use crate::cli::{CliSunlightPreset, SunlightArgs};
-use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
+use crate::{ctrlc_setup, resolve_or_exit, RUNNING};
 
 /// Which phase of the solar cycle we're in.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -121,7 +121,9 @@ fn blend_segments(a: &[Rgb], b: &[Rgb], t: f64) -> Vec<Rgb> {
         .zip(b)
         .map(|(&(ar, ag, ab), &(br, bg, bb))| {
             let f = |a: u8, b: u8| -> u8 {
-                (a as f64 * (1.0 - t) + b as f64 * t).round() as u8
+                (a as f64 * (1.0 - t) + b as f64 * t)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
             };
             (f(ar, br), f(ag, bg), f(ab, bb))
         })
@@ -212,7 +214,15 @@ fn get_preset(preset: CliSunlightPreset) -> Preset {
             },
             delay: Delay::Random(100, 250),
         },
-        CliSunlightPreset::Simple => unreachable!("simple preset handled separately"),
+        CliSunlightPreset::Simple => {
+            // Simple preset is handled by run_simple_loop, not get_preset.
+            // Fallback to coastal if we somehow reach here.
+            debug_assert!(
+                false,
+                "get_preset called with Simple — should be handled by run_simple_loop"
+            );
+            get_preset(CliSunlightPreset::Coastal)
+        }
     }
 }
 
@@ -231,7 +241,10 @@ fn resolve_times(args: &SunlightArgs) -> Result<(NaiveTime, NaiveTime), String> 
 fn run_simple_loop(args: &SunlightArgs, ip: &str, sunrise: NaiveTime, sunset: NaiveTime) {
     crate::ui::info(
         "Sunlight",
-        &format!("simple · {}K day / {}K night", args.day_temp, args.night_temp),
+        &format!(
+            "simple · {}K day / {}K night",
+            args.day_temp, args.night_temp
+        ),
     );
     crate::ui::info(
         "Schedule",
@@ -341,15 +354,12 @@ fn run_animated_loop(
         CliSunlightPreset::Coastal => "coastal",
         CliSunlightPreset::Arctic => "arctic",
         CliSunlightPreset::Ember => "ember",
-        CliSunlightPreset::Simple => unreachable!(),
+        CliSunlightPreset::Simple => "simple",
     };
 
     {
         use colored::Colorize;
-        crate::ui::info(
-            "Sunlight",
-            &format!("{}", preset_name.white().bold()),
-        );
+        crate::ui::info("Sunlight", &format!("{}", preset_name.white().bold()));
         crate::ui::info(
             "Schedule",
             &format!(
@@ -364,7 +374,13 @@ fn run_animated_loop(
         crate::ui::ctrlc_hint();
     }
 
-    let sender = UdpSender::new(ip).expect("Failed to create UDP sender");
+    let sender = match UdpSender::new(ip) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::ui::error(&format!("Failed to create UDP sender: {e}"));
+            std::process::exit(1);
+        }
+    };
     crate::dreamview::activate(ip, args.brightness, true);
 
     let mut rng = rand::rng();

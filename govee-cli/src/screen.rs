@@ -1,14 +1,14 @@
 //! Screen capture mode: captures Wayland frames, extracts per-segment colors
 //! with oversampling, smooths transitions, and streams to the strip via DreamView.
 
-use govee_lan::*;
 use govee_lan::wayland::ScreenCapturer;
 use govee_lan::UdpSender;
+use govee_lan::*;
 use std::process;
 use std::time::{Duration, Instant};
 
 use crate::cli::ScreenArgs;
-use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
+use crate::{ctrlc_setup, resolve_or_exit, RUNNING};
 
 /// Oversample multiplier: sample this many screen columns per hardware segment,
 /// then merge for finer color resolution within the device's segment limit.
@@ -34,9 +34,11 @@ fn merge_segments(colors: &[(u8, u8, u8)], n: usize) -> Vec<(u8, u8, u8)> {
                 end = (start + 1).min(len);
             }
             let chunk = &colors[start..end];
-            let (r, g, b) = chunk.iter().fold((0u32, 0u32, 0u32), |(r, g, b), &(cr, cg, cb)| {
-                (r + cr as u32, g + cg as u32, b + cb as u32)
-            });
+            let (r, g, b) = chunk
+                .iter()
+                .fold((0u32, 0u32, 0u32), |(r, g, b), &(cr, cg, cb)| {
+                    (r + cr as u32, g + cg as u32, b + cb as u32)
+                });
             let clen = chunk.len() as u32;
             ((r / clen) as u8, (g / clen) as u8, (b / clen) as u8)
         })
@@ -65,7 +67,13 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
     let n_seg = crate::dreamview::segment_count(use_razer, args.segments);
     let interval = Duration::from_secs_f64(1.0 / args.fps.max(1) as f64);
 
-    let sender = UdpSender::new(&ip).expect("Failed to create UDP sender");
+    let sender = match UdpSender::new(&ip) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::ui::error(&format!("Failed to create UDP sender: {e}"));
+            process::exit(1);
+        }
+    };
 
     crate::dreamview::activate(&ip, args.brightness, use_razer);
 
@@ -75,11 +83,25 @@ pub fn run_screen(args: ScreenArgs, ip: Option<String>, mirror: bool) {
             "DreamView ({n_seg} segments{})",
             if args.gradient { ", gradient" } else { "" }
         );
-        crate::ui::info("Mode", &format!("{} {}", mode.white(), format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()));
+        crate::ui::info(
+            "Mode",
+            &format!(
+                "{} {}",
+                mode.white(),
+                format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()
+            ),
+        );
         crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
     } else {
         use colored::Colorize;
-        crate::ui::info("Mode", &format!("{} {}", "single color".white(), format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()));
+        crate::ui::info(
+            "Mode",
+            &format!(
+                "{} {}",
+                "single color".white(),
+                format!("~{}fps · smooth: {}", args.fps, args.smoothing).dimmed()
+            ),
+        );
         crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
     }
     crate::ui::ctrlc_hint();
@@ -171,10 +193,7 @@ mod tests {
 
     #[test]
     fn merge_segments_even_chunks() {
-        let colors = vec![
-            (10, 0, 0), (30, 0, 0),
-            (0, 10, 0), (0, 30, 0),
-        ];
+        let colors = vec![(10, 0, 0), (30, 0, 0), (0, 10, 0), (0, 30, 0)];
         assert_eq!(merge_segments(&colors, 2), vec![(20, 0, 0), (0, 20, 0)]);
     }
 

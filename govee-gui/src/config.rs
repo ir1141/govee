@@ -154,7 +154,9 @@ pub struct SunlightConfig {
     pub use_location: bool,
 }
 
-fn default_use_location() -> bool { true }
+fn default_use_location() -> bool {
+    true
+}
 
 impl Default for SunlightConfig {
     fn default() -> Self {
@@ -190,23 +192,39 @@ impl SunlightConfig {
     /// Caller owns the subcommand name, device IP, and global flags (`--mirror`).
     pub fn build_cli_args(&self) -> Vec<String> {
         let mut args = vec![
-            "--preset".into(), self.preset.clone(),
-            "--brightness".into(), self.brightness.to_string(),
-            "--segments".into(), self.segments.to_string(),
-            "--transition".into(), self.transition.to_string(),
+            "--preset".into(),
+            self.preset.clone(),
+            "--brightness".into(),
+            self.brightness.to_string(),
+            "--segments".into(),
+            self.segments.to_string(),
+            "--transition".into(),
+            self.transition.to_string(),
         ];
         if self.use_location {
             if let (Some(lat), Some(lon)) = (self.lat, self.lon) {
-                args.extend(["--lat".into(), lat.to_string(),
-                             "--lon".into(), lon.to_string()]);
+                args.extend([
+                    "--lat".into(),
+                    lat.to_string(),
+                    "--lon".into(),
+                    lon.to_string(),
+                ]);
             }
         } else if let (Some(rise), Some(set)) = (&self.sunrise, &self.sunset) {
-            args.extend(["--sunrise".into(), rise.clone(),
-                         "--sunset".into(), set.clone()]);
+            args.extend([
+                "--sunrise".into(),
+                rise.clone(),
+                "--sunset".into(),
+                set.clone(),
+            ]);
         }
         if self.preset == "simple" {
-            args.extend(["--day-temp".into(), self.day_temp.to_string(),
-                         "--night-temp".into(), self.night_temp.to_string()]);
+            args.extend([
+                "--day-temp".into(),
+                self.day_temp.to_string(),
+                "--night-temp".into(),
+                self.night_temp.to_string(),
+            ]);
             if let Some(nb) = self.night_brightness {
                 args.extend(["--night-brightness".into(), nb.to_string()]);
             }
@@ -224,7 +242,6 @@ impl SunlightConfig {
         }
     }
 }
-
 
 impl GuiConfig {
     /// Load config from disk with section-level resilience: a malformed section
@@ -287,8 +304,18 @@ impl GuiConfig {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
-        if let Ok(content) = toml::to_string_pretty(self) {
-            let _ = std::fs::write(&path, content);
+        match toml::to_string_pretty(self) {
+            Ok(content) => {
+                if let Err(e) = std::fs::write(&path, &content) {
+                    eprintln!(
+                        "govee-gui: failed to save config to {}: {e}",
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => {
+                eprintln!("govee-gui: failed to serialize config: {e}");
+            }
         }
     }
 }

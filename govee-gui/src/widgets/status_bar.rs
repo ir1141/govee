@@ -1,9 +1,9 @@
 //! Bottom status bar showing connection state, active mode, and mirror toggle.
 
-use iced::widget::{container, row, text, toggler};
-use iced::{Color, Element, Length};
 use crate::app::Message;
 use crate::style;
+use iced::widget::{container, row, text, toggler};
+use iced::{Color, Element, Length};
 
 /// Render the status bar with connection indicator, mode label, and mirror toggle.
 pub fn view(connected: bool, mode_label: &str, mirror: bool) -> Element<'static, Message> {
@@ -12,10 +12,14 @@ pub fn view(connected: bool, mode_label: &str, mirror: bool) -> Element<'static,
     let status_text = if connected {
         text("● Connected").size(13).color(style::SUCCESS)
     } else {
-        text("● Disconnected").size(13).color(Color::from_rgb(1.0, 0.3, 0.3))
+        text("● Disconnected")
+            .size(13)
+            .color(Color::from_rgb(1.0, 0.3, 0.3))
     };
 
-    let mode_text = text(format!("Mode: {}", mode_label)).size(13).color(style::TEXT_SECONDARY);
+    let mode_text = text(format!("Mode: {}", mode_label))
+        .size(13)
+        .color(style::TEXT_SECONDARY);
 
     let mirror_toggle = row![
         text("Mirror").size(13).color(style::TEXT_MUTED),

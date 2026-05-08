@@ -31,6 +31,7 @@ pub struct MsgInner {
 }
 
 /// Build a JSON command packet ready to send over UDP.
+#[must_use]
 pub fn make_msg(cmd: &str, data: serde_json::Value) -> Vec<u8> {
     let msg = GoveeMsg {
         msg: MsgInner {
@@ -86,19 +87,7 @@ impl UdpSender {
 
     /// Send per-segment colors via the DreamView binary protocol.
     pub fn send_segments(&self, colors: &[(u8, u8, u8)], gradient: bool) -> std::io::Result<()> {
-        if colors.len() > 255 {
-            return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "too many segments (max 255)"));
-        }
-        let mut color_data: Vec<u8> = vec![if gradient { 1 } else { 0 }, colors.len() as u8];
-        for &(r, g, b) in colors {
-            color_data.extend_from_slice(&[r, g, b]);
-        }
-        let data_len = color_data.len();
-        // DreamView packet: 0xBB = start marker, 2-byte big-endian payload length,
-        // 0xB0 = segment-color command, then color data, then XOR checksum.
-        let mut packet = vec![0xBB, (data_len >> 8) as u8, data_len as u8, 0xB0];
-        packet.extend_from_slice(&color_data);
-        packet.push(xor_checksum(&packet));
+        let packet = build_segment_packet(colors, gradient)?;
         self.send(&razer_msg(&packet))
     }
 
@@ -152,47 +141,66 @@ pub fn send_color_temp(ip: &str, kelvin: u16) -> std::io::Result<()> {
 }
 
 /// Send an arbitrary command and optionally read a response (only `devStatus` returns data).
-pub fn send_command(ip: &str, cmd: &str, data: serde_json::Value, debug: bool) -> Option<serde_json::Value> {
-    match send_command_inner(ip, cmd, data, debug) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Command failed: {e}");
-            None
-        }
-    }
-}
-
-fn send_command_inner(ip: &str, cmd: &str, data: serde_json::Value, debug: bool) -> std::io::Result<Option<serde_json::Value>> {
+pub fn send_command(
+    ip: &str,
+    cmd: &str,
+    data: serde_json::Value,
+    debug: bool,
+) -> anyhow::Result<Option<serde_json::Value>> {
     let msg = make_msg(cmd, data);
     if debug {
         eprintln!("  >> {}", String::from_utf8_lossy(&msg));
     }
 
-    let sock = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::DGRAM, Some(socket2::Protocol::UDP))?;
+    let sock = socket2::Socket::new(
+        socket2::Domain::IPV4,
+        socket2::Type::DGRAM,
+        Some(socket2::Protocol::UDP),
+    )?;
     sock.set_reuse_address(true)?;
-    sock.bind(&socket2::SockAddr::from(std::net::SocketAddrV4::new(std::net::Ipv4Addr::UNSPECIFIED, RESPONSE_PORT)))?;
+    sock.bind(&socket2::SockAddr::from(std::net::SocketAddrV4::new(
+        std::net::Ipv4Addr::UNSPECIFIED,
+        RESPONSE_PORT,
+    )))?;
     sock.set_read_timeout(Some(std::time::Duration::from_secs(2)))?;
     let sock: UdpSocket = sock.into();
     sock.send_to(&msg, (ip, CONTROL_PORT))?;
 
     if cmd == "devStatus" {
         let mut buf = [0u8; 4096];
-        match sock.recv_from(&mut buf) {
-            Ok((n, _)) => {
-                let resp_str = std::str::from_utf8(&buf[..n])
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                if debug {
-                    eprintln!("  << {}", resp_str);
-                }
-                let resp: GoveeMsg = serde_json::from_str(resp_str)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-                Ok(Some(resp.msg.data))
-            }
-            Err(e) => Err(e),
+        let (n, _) = sock.recv_from(&mut buf)?;
+        let resp_str = std::str::from_utf8(&buf[..n])
+            .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in response: {e}"))?;
+        if debug {
+            eprintln!("  << {}", resp_str);
         }
+        let resp: GoveeMsg = serde_json::from_str(resp_str)?;
+        Ok(Some(resp.msg.data))
     } else {
         Ok(None)
     }
+}
+
+/// Build a DreamView segment-color packet.
+///
+/// DreamView packet: `0xBB` = start marker, 2-byte big-endian payload length,
+/// `0xB0` = segment-color command, then gradient flag + count + RGB data, then XOR checksum.
+fn build_segment_packet(colors: &[(u8, u8, u8)], gradient: bool) -> std::io::Result<Vec<u8>> {
+    if colors.len() > 255 {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "too many segments (max 255)",
+        ));
+    }
+    let mut color_data: Vec<u8> = vec![if gradient { 1 } else { 0 }, colors.len() as u8];
+    for &(r, g, b) in colors {
+        color_data.extend_from_slice(&[r, g, b]);
+    }
+    let data_len = color_data.len();
+    let mut packet = vec![0xBB, (data_len >> 8) as u8, data_len as u8, 0xB0];
+    packet.extend_from_slice(&color_data);
+    packet.push(xor_checksum(&packet));
+    Ok(packet)
 }
 
 fn xor_checksum(data: &[u8]) -> u8 {
@@ -224,18 +232,6 @@ pub fn razer_deactivate(ip: &str) -> std::io::Result<()> {
 ///
 /// Use [`UdpSender::send_segments`] in hot loops to avoid per-call socket overhead.
 pub fn send_segments(ip: &str, colors: &[(u8, u8, u8)], gradient: bool) -> std::io::Result<()> {
-    if colors.len() > 255 {
-        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "too many segments (max 255)"));
-    }
-    let mut color_data: Vec<u8> = vec![if gradient { 1 } else { 0 }, colors.len() as u8];
-    for &(r, g, b) in colors {
-        color_data.extend_from_slice(&[r, g, b]);
-    }
-    let data_len = color_data.len();
-    let mut packet = vec![0xBB, (data_len >> 8) as u8, data_len as u8, 0xB0];
-    packet.extend_from_slice(&color_data);
-    packet.push(xor_checksum(&packet));
+    let packet = build_segment_packet(colors, gradient)?;
     udp_send(ip, &razer_msg(&packet))
 }
-
-

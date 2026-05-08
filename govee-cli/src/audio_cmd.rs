@@ -1,14 +1,14 @@
 //! Audio reactive visualization: captures system audio, analyzes it with FFT,
 //! and drives LED segments in real time via DreamView.
 
-use govee_lan::*;
-use govee_lan::audio::{AudioAnalyzer, map_colors};
+use govee_lan::audio::{map_colors, AudioAnalyzer, LaserState};
 use govee_lan::UdpSender;
+use govee_lan::*;
 use std::process;
 use std::time::{Duration, Instant};
 
 use crate::cli::AudioArgs;
-use crate::{RUNNING, ctrlc_setup, resolve_or_exit};
+use crate::{ctrlc_setup, resolve_or_exit, RUNNING};
 
 /// Run the audio-reactive visualization loop.
 pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
@@ -17,7 +17,14 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
     let use_razer = !args.no_dreamview;
     let n_seg = crate::dreamview::segment_count(use_razer, args.segments);
 
-    let sender = UdpSender::new(&ip).expect("Failed to create UDP sender");
+    let sender = match UdpSender::new(&ip) {
+        Ok(s) => s,
+        Err(e) => {
+            crate::ui::error(&format!("Failed to create UDP sender: {e}"));
+            crate::dreamview::shutdown(&ip, use_razer);
+            process::exit(1);
+        }
+    };
 
     crate::dreamview::activate(&ip, args.brightness, use_razer);
 
@@ -43,7 +50,18 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
     };
     {
         use colored::Colorize;
-        crate::ui::info("Mode", &format!("{} {}", format!("{:?}", args.mode).white(), format!("{} · {:?} · sens: {}", mode_str, args.palette, args.sensitivity).dimmed()));
+        crate::ui::info(
+            "Mode",
+            &format!(
+                "{} {}",
+                format!("{:?}", args.mode).white(),
+                format!(
+                    "{} · {:?} · sens: {}",
+                    mode_str, args.palette, args.sensitivity
+                )
+                .dimmed()
+            ),
+        );
         crate::ui::info("Brightness", &crate::ui::brightness_bar(args.brightness));
         crate::ui::ctrlc_hint();
     }
@@ -55,6 +73,7 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
     let mut t: f64 = 0.0;
     let mut beat_hue: f64 = 0.0;
     let mut beat_decay: f64 = 0.0;
+    let mut laser_state = LaserState::default();
 
     while RUNNING.load(std::sync::atomic::Ordering::Relaxed) {
         let t0 = Instant::now();
@@ -76,6 +95,7 @@ pub fn run_audio(args: AudioArgs, ip: Option<String>, mirror: bool) {
             t,
             &mut beat_hue,
             &mut beat_decay,
+            &mut laser_state,
         );
 
         let mut current_colors = Vec::with_capacity(n_seg);

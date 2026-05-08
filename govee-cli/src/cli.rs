@@ -5,13 +5,23 @@ use clap::{Args, Parser, Subcommand};
 /// CLI-side visualization mode (maps to [`govee_lan::audio::VisMode`]).
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CliVisMode {
-    Energy, Frequency, Beat, Drop, Laser,
+    Energy,
+    Frequency,
+    Beat,
+    Drop,
+    Laser,
 }
 
 /// CLI-side palette selection (maps to [`govee_lan::audio::Palette`]).
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CliPalette {
-    Fire, Ocean, Forest, Neon, Ice, Sunset, Rainbow,
+    Fire,
+    Ocean,
+    Forest,
+    Neon,
+    Ice,
+    Sunset,
+    Rainbow,
 }
 
 impl From<CliVisMode> for govee_lan::audio::VisMode {
@@ -43,7 +53,10 @@ impl From<CliPalette> for govee_lan::audio::Palette {
 /// CLI-side sunlight preset selection.
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum CliSunlightPreset {
-    Coastal, Arctic, Ember, Simple,
+    Coastal,
+    Arctic,
+    Ember,
+    Simple,
 }
 
 use crate::themes;
@@ -63,7 +76,11 @@ pub struct Cli {
     #[arg(long, global = true, help = "Show raw UDP messages")]
     pub debug: bool,
 
-    #[arg(long, global = true, help = "Mirror segments for U-shaped strip layout")]
+    #[arg(
+        long,
+        global = true,
+        help = "Mirror segments for U-shaped strip layout"
+    )]
     pub mirror: bool,
 
     #[arg(long, short, global = true, help = "Suppress informational output")]
@@ -135,11 +152,7 @@ pub enum Command {
 
 #[derive(Args)]
 pub struct AmbientArgs {
-    #[arg(
-        long,
-        default_value = "primary",
-        help = "Which theme color to use"
-    )]
+    #[arg(long, default_value = "primary", help = "Which theme color to use")]
     pub color: String,
 
     #[arg(long, default_value_t = 80, help = "Strip brightness 1-100")]
@@ -154,13 +167,25 @@ pub struct AmbientArgs {
 
 #[derive(Args)]
 pub struct SunlightArgs {
-    #[arg(long, default_value = "coastal", help = "Preset: coastal, arctic, ember, simple")]
+    #[arg(
+        long,
+        default_value = "coastal",
+        help = "Preset: coastal, arctic, ember, simple"
+    )]
     pub preset: CliSunlightPreset,
 
-    #[arg(long, allow_negative_numbers = true, help = "Latitude for solar calculation")]
+    #[arg(
+        long,
+        allow_negative_numbers = true,
+        help = "Latitude for solar calculation"
+    )]
     pub lat: Option<f64>,
 
-    #[arg(long, allow_negative_numbers = true, help = "Longitude for solar calculation")]
+    #[arg(
+        long,
+        allow_negative_numbers = true,
+        help = "Longitude for solar calculation"
+    )]
     pub lon: Option<f64>,
 
     #[arg(long, help = "Manual sunrise time (HH:MM)")]
@@ -181,10 +206,18 @@ pub struct SunlightArgs {
     #[arg(long, default_value_t = 15, value_parser = parse_segments_127, help = "Number of DreamView segments")]
     pub segments: usize,
 
-    #[arg(long, default_value_t = 6500, help = "Day color temperature (simple preset only)")]
+    #[arg(
+        long,
+        default_value_t = 6500,
+        help = "Day color temperature (simple preset only)"
+    )]
     pub day_temp: u16,
 
-    #[arg(long, default_value_t = 3000, help = "Night color temperature (simple preset only)")]
+    #[arg(
+        long,
+        default_value_t = 3000,
+        help = "Night color temperature (simple preset only)"
+    )]
     pub night_temp: u16,
 
     #[arg(short, long, help = "Verbose output")]
@@ -230,10 +263,7 @@ pub struct ScreenArgs {
     )]
     pub saturate: f64,
 
-    #[arg(
-        long,
-        help = "Use single colorwc instead of DreamView segments"
-    )]
+    #[arg(long, help = "Use single colorwc instead of DreamView segments")]
     pub no_dreamview: bool,
 
     #[arg(short, long, help = "Verbose output")]

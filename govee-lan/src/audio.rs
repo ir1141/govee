@@ -6,20 +6,20 @@
 //! to per-segment LED colors.
 
 use anyhow::Result;
-use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use libpulse_binding as pulse;
-use pulse::mainloop::standard::Mainloop;
 use pulse::context::Context;
-use pulse::stream::Stream;
+use pulse::mainloop::standard::Mainloop;
 use pulse::sample::{Format, Spec};
 use pulse::stream::PeekResult;
-use rustfft::{FftPlanner, num_complex::Complex};
+use pulse::stream::Stream;
+use rustfft::{num_complex::Complex, FftPlanner};
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 
 /// Visualization algorithm selection.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VisMode {
     Energy,
     Frequency,
@@ -29,7 +29,7 @@ pub enum VisMode {
 }
 
 /// Color palette for the visualization.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Palette {
     Fire,
     Ocean,
@@ -159,6 +159,7 @@ const BAND_EDGES: [(f64, f64); 6] = [
 /// Asymmetric exponential filter — fast rise, slow decay.
 /// Tracks a peak value that quickly jumps up to loud signals but slowly
 /// decays, so dividing by it always yields a full 0.0-1.0 dynamic range.
+#[derive(Debug)]
 struct ExpFilter {
     value: f64,
     alpha_rise: f64,
@@ -167,11 +168,19 @@ struct ExpFilter {
 
 impl ExpFilter {
     fn new(initial: f64, alpha_rise: f64, alpha_decay: f64) -> Self {
-        Self { value: initial, alpha_rise, alpha_decay }
+        Self {
+            value: initial,
+            alpha_rise,
+            alpha_decay,
+        }
     }
 
     fn update(&mut self, sample: f64) -> f64 {
-        let alpha = if sample > self.value { self.alpha_rise } else { self.alpha_decay };
+        let alpha = if sample > self.value {
+            self.alpha_rise
+        } else {
+            self.alpha_decay
+        };
         self.value = alpha * sample + (1.0 - alpha) * self.value;
         // Never decay below noise gate — prevents normalizing silence to full range
         self.value = self.value.max(NOISE_GATE);
@@ -195,14 +204,29 @@ impl AudioAnalyzer {
         let state_clone = Arc::clone(&state);
         let running_clone = Arc::clone(&running);
 
+        let (init_tx, init_rx) = std::sync::mpsc::channel::<Result<()>>();
+
         let thread = thread::spawn(move || {
-            if let Err(e) = capture_loop(state_clone, running_clone) {
+            if let Err(e) = capture_loop_with_init(state_clone, running_clone, init_tx) {
+                // init errors are sent via the channel; runtime errors after init are logged here
                 eprintln!("Audio capture error: {e}");
             }
         });
 
-        // Give PulseAudio a moment to connect
-        thread::sleep(std::time::Duration::from_millis(200));
+        // Wait for the capture thread to either report success or fail.
+        // The thread sends Ok(()) once the PA stream is ready, or Err on failure.
+        // Timeout after 5s in case the thread hangs.
+        match init_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+            Ok(Ok(())) => {}
+            Ok(Err(e)) => return Err(e),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                // Thread didn't report back — give PA a moment to connect
+                thread::sleep(std::time::Duration::from_millis(200));
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                anyhow::bail!("Audio capture thread exited before initialization completed");
+            }
+        }
 
         Ok(Self {
             state,
@@ -221,7 +245,8 @@ impl AudioAnalyzer {
 
 impl Drop for AudioAnalyzer {
     fn drop(&mut self) {
-        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        self.running
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
@@ -256,15 +281,31 @@ fn find_monitor_source(mainloop: &mut Mainloop, context: &Context) -> Result<Str
     borrowed.ok_or_else(|| anyhow::anyhow!("No default sink found"))
 }
 
-fn capture_loop(
+fn capture_loop_with_init(
     state: Arc<Mutex<AudioState>>,
     running: Arc<std::sync::atomic::AtomicBool>,
+    init_tx: std::sync::mpsc::Sender<Result<()>>,
 ) -> Result<()> {
-    let mut mainloop = Mainloop::new().ok_or_else(|| anyhow::anyhow!("Failed to create PulseAudio mainloop"))?;
+    let init_tx_for_err = init_tx.clone();
+    let result = capture_loop_inner(state, running, Some(init_tx));
+    if let Err(ref e) = result {
+        let _ = init_tx_for_err.send(Err(anyhow::anyhow!("{e:#}")));
+    }
+    result
+}
+
+fn capture_loop_inner(
+    state: Arc<Mutex<AudioState>>,
+    running: Arc<std::sync::atomic::AtomicBool>,
+    init_tx: Option<std::sync::mpsc::Sender<Result<()>>>,
+) -> Result<()> {
+    let mut mainloop =
+        Mainloop::new().ok_or_else(|| anyhow::anyhow!("Failed to create PulseAudio mainloop"))?;
     let mut context = Context::new(&mainloop, "govee-audio")
         .ok_or_else(|| anyhow::anyhow!("Failed to create PulseAudio context"))?;
 
-    context.connect(None, pulse::context::FlagSet::NOFLAGS, None)
+    context
+        .connect(None, pulse::context::FlagSet::NOFLAGS, None)
         .map_err(|e| anyhow::anyhow!("PA connect: {e}"))?;
 
     // Wait for context to be ready
@@ -303,11 +344,13 @@ fn capture_loop(
         minreq: u32::MAX,
         fragsize: target_bytes,
     };
-    stream.connect_record(
-        Some(&monitor_source),
-        Some(&buf_attr),
-        pulse::stream::FlagSet::ADJUST_LATENCY,
-    ).map_err(|e| anyhow::anyhow!("PA record connect: {e}"))?;
+    stream
+        .connect_record(
+            Some(&monitor_source),
+            Some(&buf_attr),
+            pulse::stream::FlagSet::ADJUST_LATENCY,
+        )
+        .map_err(|e| anyhow::anyhow!("PA record connect: {e}"))?;
 
     // Wait for stream to be ready
     loop {
@@ -321,6 +364,11 @@ fn capture_loop(
         }
     }
 
+    // Signal successful init to the caller
+    if let Some(tx) = init_tx {
+        let _ = tx.send(Ok(()));
+    }
+
     let mut planner = FftPlanner::<f64>::new();
     let fft = planner.plan_fft_forward(FFT_SIZE);
     let mut sample_buf: Vec<f32> = Vec::with_capacity(BUFFER_SIZE);
@@ -329,7 +377,8 @@ fn capture_loop(
 
     // Adaptive gain: fast rise (0.99) catches transients, slow decay (0.02) releases in ~2.5s
     let mut rms_gain = ExpFilter::new(NOISE_GATE, 0.99, 0.02);
-    let mut band_gains: [ExpFilter; 6] = std::array::from_fn(|_| ExpFilter::new(NOISE_GATE, 0.99, 0.02));
+    let mut band_gains: [ExpFilter; 6] =
+        std::array::from_fn(|_| ExpFilter::new(NOISE_GATE, 0.99, 0.02));
     let mut prev_bass: f64 = 0.0;
     let mut prev_treble: f64 = 0.0;
     let mut smoothed_bands = [0.0_f64; 6];
@@ -368,10 +417,12 @@ fn capture_loop(
         let samples: Vec<f32> = sample_buf.drain(..BUFFER_SIZE).collect();
 
         // RMS energy
-        let rms = (samples.iter().map(|&s| (s as f64) * (s as f64)).sum::<f64>()
+        let rms = (samples
+            .iter()
+            .map(|&s| (s as f64) * (s as f64))
+            .sum::<f64>()
             / samples.len() as f64)
             .sqrt();
-
 
         // Hanning window reduces spectral leakage before FFT:
         // w(n) = 0.5 × (1 − cos(2πn / (N−1)))
@@ -380,7 +431,8 @@ fn capture_loop(
             .iter()
             .enumerate()
             .map(|(i, &s)| {
-                let window = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / (FFT_SIZE - 1) as f64).cos());
+                let window = 0.5
+                    * (1.0 - (2.0 * std::f64::consts::PI * i as f64 / (FFT_SIZE - 1) as f64).cos());
                 Complex::new(s as f64 * window, 0.0)
             })
             .collect();
@@ -396,14 +448,15 @@ fn capture_loop(
             if bin_lo >= bin_hi {
                 continue;
             }
-            let sum: f64 = fft_input[bin_lo..bin_hi]
-                .iter()
-                .map(|c| c.norm())
-                .sum();
+            let sum: f64 = fft_input[bin_lo..bin_hi].iter().map(|c| c.norm()).sum();
             let avg = sum / (bin_hi - bin_lo) as f64;
             // Adaptive per-band normalization
             let peak = band_gains[band_idx].update(avg);
-            bands[band_idx] = if peak > NOISE_GATE { (avg / peak).clamp(0.0, 1.0) } else { 0.0 };
+            bands[band_idx] = if peak > NOISE_GATE {
+                (avg / peak).clamp(0.0, 1.0)
+            } else {
+                0.0
+            };
         }
 
         // Spectral flux — positive-only frame-to-frame delta for onset detection
@@ -454,7 +507,25 @@ fn capture_loop(
     Ok(())
 }
 
+/// State for the laser visualization mode, tracking sweep phase, BPM,
+/// and strobe timing across frames.
+#[derive(Debug, Default)]
+pub struct LaserState {
+    last_t: f64,
+    last_beat_t: f64,
+    bpm_period: f64, // EMA seconds-per-beat; 0.0 until first valid interval
+    beat_count: u32,
+    avg_energy: f64,  // EMA of audio.energy
+    sweep_phase: f64, // 0.0..2.0 — 0..1 forward, 1..2 reverse
+    last_swap_t: f64,
+    last_strobe_t: f64,
+    strobe_decay: f64,
+    swap_counter: u32,
+    pattern_idx: u32,
+}
+
 /// Map audio state to segment colors based on visualization mode
+#[allow(clippy::too_many_arguments)]
 pub fn map_colors(
     audio: &AudioState,
     mode: VisMode,
@@ -463,40 +534,26 @@ pub fn map_colors(
     t: f64,
     beat_hue: &mut f64,
     beat_decay: &mut f64,
+    laser_state: &mut LaserState,
 ) -> Vec<(u8, u8, u8)> {
     match mode {
         VisMode::Energy => map_energy(audio, palette, n_seg, t),
         VisMode::Frequency => map_frequency(audio, palette, n_seg),
         VisMode::Beat => map_beat(audio, palette, n_seg, beat_hue, beat_decay),
         VisMode::Drop => map_drop(audio, n_seg, beat_hue, beat_decay),
-        VisMode::Laser => map_laser(audio, n_seg, t),
+        VisMode::Laser => map_laser(audio, n_seg, t, laser_state),
     }
 }
 
 /// DJ-style laser sweep: two narrow saturated beams scan a black strip,
 /// tempo-locked, with bar-aligned color/pattern rotation and a gated
 /// bass-flux strobe. Beam visibility and sweep speed track an energy EMA.
-fn map_laser(audio: &AudioState, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
-    use std::cell::RefCell;
-
-    #[derive(Default)]
-    struct LaserState {
-        last_t: f64,
-        last_beat_t: f64,
-        bpm_period: f64,   // EMA seconds-per-beat; 0.0 until first valid interval
-        beat_count: u32,
-        avg_energy: f64,   // EMA of audio.energy
-        sweep_phase: f64,  // 0.0..2.0 — 0..1 forward, 1..2 reverse
-        last_swap_t: f64,
-        last_strobe_t: f64,
-        strobe_decay: f64,
-        swap_counter: u32,
-        pattern_idx: u32,
-    }
-    thread_local! {
-        static LASER: RefCell<LaserState> = RefCell::new(LaserState::default());
-    }
-
+fn map_laser(
+    audio: &AudioState,
+    n_seg: usize,
+    t: f64,
+    laser_state: &mut LaserState,
+) -> Vec<(u8, u8, u8)> {
     // Classic green, hot magenta, ice cyan.
     const BEAMS: [(u8, u8, u8); 3] = [(0, 255, 30), (255, 0, 200), (0, 220, 255)];
     /// One full triangle sweep per bar in 4/4.
@@ -510,8 +567,8 @@ fn map_laser(audio: &AudioState, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
     const STROBE_GATE: f64 = 0.25;
     const STROBE_COOLDOWN: f64 = 0.4;
 
-    LASER.with(|state| {
-        let mut s = state.borrow_mut();
+    {
+        let s = &mut *laser_state;
 
         let dt = if s.last_t == 0.0 {
             1.0 / 60.0
@@ -564,7 +621,13 @@ fn map_laser(audio: &AudioState, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
         }
 
         let span = n_seg as f64;
-        let tri = |p: f64| -> f64 { if p < 1.0 { p } else { 2.0 - p } };
+        let tri = |p: f64| -> f64 {
+            if p < 1.0 {
+                p
+            } else {
+                2.0 - p
+            }
+        };
         let phase_b = (s.sweep_phase + 1.0) % 2.0;
 
         // 0: X-cross, 1: mirror-expand, 2: anchored-inner, 3: single-sweep.
@@ -572,7 +635,11 @@ fn map_laser(audio: &AudioState, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
             0 => (tri(s.sweep_phase) * span, tri(phase_b) * span, true),
             1 => {
                 let half = span / 2.0;
-                (tri(s.sweep_phase) * half, span - tri(s.sweep_phase) * half, true)
+                (
+                    tri(s.sweep_phase) * half,
+                    span - tri(s.sweep_phase) * half,
+                    true,
+                )
             }
             2 => (
                 tri(s.sweep_phase) * span,
@@ -607,13 +674,22 @@ fn map_laser(audio: &AudioState, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
                 // Sharp falloff: 1.0 at center, 0.4 at ±1, 0.08 at ±2.
                 let intensity_at = |pos: f64| -> f64 {
                     let d = (x - pos).abs();
-                    if d < 0.5 { 1.0 }
-                    else if d < 1.5 { 0.4 }
-                    else if d < 2.5 { 0.08 }
-                    else { 0.0 }
+                    if d < 0.5 {
+                        1.0
+                    } else if d < 1.5 {
+                        0.4
+                    } else if d < 2.5 {
+                        0.08
+                    } else {
+                        0.0
+                    }
                 };
                 let ia = intensity_at(pos_a) * visibility;
-                let ib = if beam_b_active { intensity_at(pos_b) * visibility } else { 0.0 };
+                let ib = if beam_b_active {
+                    intensity_at(pos_b) * visibility
+                } else {
+                    0.0
+                };
 
                 let r = (beam_color.0 as f64 * ia + beam_color_b.0 as f64 * ib).min(255.0);
                 let g = (beam_color.1 as f64 * ia + beam_color_b.1 as f64 * ib).min(255.0);
@@ -626,7 +702,7 @@ fn map_laser(audio: &AudioState, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
                 (r, g, b)
             })
             .collect()
-    })
+    }
 }
 
 fn map_energy(audio: &AudioState, palette: Palette, n_seg: usize, t: f64) -> Vec<(u8, u8, u8)> {
@@ -711,15 +787,15 @@ fn map_drop(
         .map(|_| {
             if b > t && b > 0.02 {
                 // Bass drop: deep red → bright magenta
-                let r = (80.0 + 175.0 * b) as u8;
+                let r = (80.0 + 175.0 * b).clamp(0.0, 255.0) as u8;
                 let g = 0;
-                let b_ch = (40.0 * b) as u8;
+                let b_ch = (40.0 * b).clamp(0.0, 255.0) as u8;
                 (r, g, b_ch)
             } else if t > 0.02 {
                 // Treble hit: cyan → white
-                let r = (180.0 * t) as u8;
-                let g = (220.0 * t) as u8;
-                let b_ch = (255.0 * t) as u8;
+                let r = (180.0 * t).clamp(0.0, 255.0) as u8;
+                let g = (220.0 * t).clamp(0.0, 255.0) as u8;
+                let b_ch = (255.0 * t).clamp(0.0, 255.0) as u8;
                 (r, g, b_ch)
             } else {
                 (0, 0, 0) // dark

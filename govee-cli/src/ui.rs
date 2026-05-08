@@ -23,7 +23,11 @@ fn is_quiet() -> bool {
 }
 
 macro_rules! quiet_guard {
-    () => { if is_quiet() { return; } };
+    () => {
+        if is_quiet() {
+            return;
+        }
+    };
 }
 
 /// Print the application banner with version.
@@ -92,7 +96,11 @@ pub fn color_swatch(r: u8, g: u8, b: u8) -> String {
 
 /// Render a colored swatch with both hex and decimal RGB.
 pub fn color_swatch_full(r: u8, g: u8, b: u8) -> String {
-    format!("{} {}", color_swatch(r, g, b), format!("({r}, {g}, {b})").dimmed())
+    format!(
+        "{} {}",
+        color_swatch(r, g, b),
+        format!("({r}, {g}, {b})").dimmed()
+    )
 }
 
 /// Render colored block characters for each segment.
@@ -121,7 +129,11 @@ pub fn status_line_finish() {
 /// Print "Scanning for devices..." status.
 pub fn discovery_scanning() {
     quiet_guard!();
-    eprintln!("{} {}", DIAMOND.purple(), "Scanning for devices...".dimmed());
+    eprintln!(
+        "{} {}",
+        DIAMOND.purple(),
+        "Scanning for devices...".dimmed()
+    );
 }
 
 /// Print a discovered device name and IP.
